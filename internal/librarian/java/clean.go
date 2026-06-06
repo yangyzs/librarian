@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -54,7 +55,7 @@ func Clean(library *config.Library) error {
 	patterns := cleanPatterns(library)
 	keepSet := make(map[string]bool)
 	for _, k := range library.Keep {
-		keepSet[filepath.ToSlash(k)] = true
+		keepSet[strings.TrimSuffix(filepath.ToSlash(k), "/")] = true
 	}
 	for pattern, useMarker := range patterns {
 		matches, err := filepath.Glob(filepath.Join(library.Output, pattern))
@@ -168,8 +169,20 @@ func isDirNotEmpty(err error) bool {
 
 // shouldPreserve returns true if the given slash-separated path should be preserved
 // based on the keepSet or standard preservation patterns.
-func shouldPreserve(path string, keepSet map[string]bool) bool {
-	return keepSet[path] || isDefaultPreserved(path)
+// It also checks if any ancestor directory is in the keepSet.
+func shouldPreserve(p string, keepSet map[string]bool) bool {
+	if keepSet[p] || isDefaultPreserved(p) {
+		return true
+	}
+
+	dir := path.Dir(p)
+	for dir != "." && dir != "/" && dir != "" {
+		if keepSet[dir] {
+			return true
+		}
+		dir = path.Dir(dir)
+	}
+	return false
 }
 
 func isDefaultPreserved(path string) bool {
@@ -204,7 +217,7 @@ func shouldCleanMarkerPath(path string, d os.DirEntry) (bool, error) {
 // hasMarker checks if the file at path contains the auto-generated marker.
 // It scans the file line by line using [bufio.Reader] and returns true as soon
 // as the marker is found, avoiding reading the entire file.
-func hasMarker(path string) (bool, error) {
+func hasMarker(path string) (has bool, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return false, err

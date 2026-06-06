@@ -302,7 +302,11 @@ func TestGenerateAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	apiCfg, err := serviceconfig.Find(googleapisDir, "google/cloud/secretmanager/v1", config.LanguageJava)
+	absGoogleapisDir, err := filepath.Abs(googleapisDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiCfg, err := serviceconfig.Find(absGoogleapisDir, "google/cloud/secretmanager/v1", config.LanguageJava)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +314,7 @@ func TestGenerateAPI(t *testing.T) {
 		cfg:     cfg,
 		api:     library.APIs[0],
 		library: library,
-		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: googleapisDir}, nil),
+		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: absGoogleapisDir}, nil),
 		outdir:  outdir,
 		metadata: &repoMetadata{
 			NamePretty:     "Secret Manager",
@@ -367,7 +371,11 @@ func TestGenerateAPI_ProtoOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	apiCfg, err := serviceconfig.Find(googleapisDir, "google/cloud/gkehub/policycontroller/v1beta", config.LanguageJava)
+	absGoogleapisDir, err := filepath.Abs(googleapisDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiCfg, err := serviceconfig.Find(absGoogleapisDir, "google/cloud/gkehub/policycontroller/v1beta", config.LanguageJava)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +383,7 @@ func TestGenerateAPI_ProtoOnly(t *testing.T) {
 		cfg:     cfg,
 		api:     library.APIs[0],
 		library: library,
-		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: googleapisDir}, nil),
+		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: absGoogleapisDir}, nil),
 		outdir:  outdir,
 		metadata: &repoMetadata{
 			NamePretty: "GKE Hub API",
@@ -511,7 +519,11 @@ func TestGenerateAPI_WithAdditionalProtosToGenerateAndCopy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	apiCfg, err := serviceconfig.Find(googleapisDir, "google/cloud/secretmanager/v1", config.LanguageJava)
+	absGoogleapisDir, err := filepath.Abs(googleapisDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiCfg, err := serviceconfig.Find(absGoogleapisDir, "google/cloud/secretmanager/v1", config.LanguageJava)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +531,7 @@ func TestGenerateAPI_WithAdditionalProtosToGenerateAndCopy(t *testing.T) {
 		cfg:     cfg,
 		api:     library.APIs[0],
 		library: library,
-		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: googleapisDir}, nil),
+		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: absGoogleapisDir}, nil),
 		outdir:  outdir,
 		metadata: &repoMetadata{
 			NamePretty:     "Secret Manager",
@@ -640,7 +652,7 @@ func TestGenerateLibrary_Error(t *testing.T) {
 				},
 				Libraries: []*config.Library{test.library},
 			}
-			err := Generate(t.Context(), cfg, test.library, &sources.Sources{Googleapis: googleapisDir})
+			err := Generate(t.Context(), cfg, test.library, &sources.Sources{Googleapis: googleapisDir}, false)
 			if !errors.Is(err, test.wantErr) {
 				t.Errorf("generate() error = %v, wantErr %v", err, test.wantErr)
 			}
@@ -693,7 +705,7 @@ func TestGenerate_Logic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Generate(t.Context(), cfg, library, &sources.Sources{Googleapis: googleapisDir})
+	err := Generate(t.Context(), cfg, library, &sources.Sources{Googleapis: googleapisDir}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -755,7 +767,7 @@ func TestGenerate_ProtoExclusion(t *testing.T) {
 			{Name: rootLibrary, Version: "1.2.3"},
 		},
 	}
-	err := Generate(t.Context(), cfg, library, &sources.Sources{Googleapis: googleapisDir})
+	err := Generate(t.Context(), cfg, library, &sources.Sources{Googleapis: googleapisDir}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

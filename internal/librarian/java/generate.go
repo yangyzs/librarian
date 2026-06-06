@@ -67,7 +67,7 @@ type generateAPIParams struct {
 }
 
 // Generate generates a Java client library.
-func Generate(ctx context.Context, cfg *config.Config, library *config.Library, srcs *sources.Sources) error {
+func Generate(ctx context.Context, cfg *config.Config, library *config.Library, srcs *sources.Sources, useGoPostprocessor bool) error {
 	if library.Java.GroupID == fakeGroupID {
 		return errUnrecognizedAPI
 	}
@@ -110,11 +110,12 @@ func Generate(ctx context.Context, cfg *config.Config, library *config.Library, 
 	}
 
 	if err := postProcessLibrary(ctx, libraryPostProcessParams{
-		cfg:        cfg,
-		library:    library,
-		outDir:     outdir,
-		metadata:   metadata,
-		transports: transports,
+		cfg:                cfg,
+		library:            library,
+		outDir:             outdir,
+		metadata:           metadata,
+		transports:         transports,
+		UseGoPostprocessor: useGoPostprocessor,
 	}); err != nil {
 		return err
 	}

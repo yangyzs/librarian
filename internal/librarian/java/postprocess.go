@@ -65,9 +65,16 @@ type libraryPostProcessParams struct {
 	outDir     string
 	metadata   *repoMetadata
 	transports map[string]serviceconfig.Transport
+	UseGoPostprocessor bool
 }
 
 func postProcessLibrary(ctx context.Context, params libraryPostProcessParams) error {
+	if params.UseGoPostprocessor {
+		yamlPath := filepath.Join(params.outDir, "postprocess.yaml")
+		if _, err := os.Stat(yamlPath); err == nil {
+			return postProcessLibraryNew(params)
+		}
+	}
 	if err := createOrVerifyOwlbotPy(params.outDir); err != nil {
 		return err
 	}

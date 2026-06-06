@@ -33,7 +33,10 @@ func TestPostGenerate(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	// Copy testdata to tmpDir
-	testdataDir := filepath.Join("testdata", "postgenerate")
+	testdataDir, err := filepath.Abs(filepath.Join("testdata", "postgenerate"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := copyDir(testdataDir, tmpDir); err != nil {
 		t.Fatal(err)
 	}

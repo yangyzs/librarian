@@ -196,9 +196,13 @@ func TestRestructureModules(t *testing.T) {
 	if err := os.WriteFile(reflectConfigPath, []byte("{}"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	protoPath := filepath.Join(googleapisDir, "google", "cloud", "secretmanager", "v1", "service.proto")
+	absGoogleapisDir, err := filepath.Abs(googleapisDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protoPath := filepath.Join(absGoogleapisDir, "google", "cloud", "secretmanager", "v1", "service.proto")
 
-	additionalProtoPath := filepath.Join(googleapisDir, "google", "cloud", "oslogin", "common", "common.proto")
+	additionalProtoPath := filepath.Join(absGoogleapisDir, "google", "cloud", "oslogin", "common", "common.proto")
 	params := postProcessParams{
 		outDir: tmpDir,
 		library: &config.Library{
@@ -1136,4 +1140,104 @@ func TestCreateOrVerifyOwlbotPy_Error(t *testing.T) {
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("error = %v, wantErr %v", err, fs.ErrPermission)
 	}
+}
+
+func TestPostProcessLibrary_Branching(t *testing.T) {
+
+	t.Run("UseGoPostprocessor false", func(t *testing.T) {
+		outDir := t.TempDir()
+		// Create a dummy owlbot.py to avoid failure in createOrVerifyOwlbotPy
+		if err := os.WriteFile(filepath.Join(outDir, "owlbot.py"), []byte(""), 0755); err != nil {
+			t.Fatal(err)
+		}
+		p := libraryPostProcessParams{
+			outDir: outDir,
+			cfg: &config.Config{
+				Libraries: []*config.Library{
+					{Name: "google-cloud-java", Version: "1.2.3"},
+				},
+			},
+			library: &config.Library{
+				Name: "test-library",
+			},
+		}
+		err := postProcessLibrary(t.Context(), p)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if strings.Contains(err.Error(), "postProcessLibraryNew not implemented") {
+			t.Errorf("expected legacy flow, but got new flow error: %v", err)
+		}
+	})
+
+	t.Run("UseGoPostprocessor true, no yaml", func(t *testing.T) {
+		outDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(outDir, "owlbot.py"), []byte(""), 0755); err != nil {
+			t.Fatal(err)
+		}
+		p := libraryPostProcessParams{
+			outDir:             outDir,
+			UseGoPostprocessor: true,
+			cfg: &config.Config{
+				Libraries: []*config.Library{
+					{Name: "google-cloud-java", Version: "1.2.3"},
+				},
+			},
+			library: &config.Library{
+				Name: "test-library",
+			},
+		}
+		err := postProcessLibrary(t.Context(), p)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if strings.Contains(err.Error(), "postProcessLibraryNew not implemented") {
+			t.Errorf("expected legacy flow, but got new flow error: %v", err)
+		}
+	})
+
+	t.Run("UseGoPostprocessor true, with yaml", func(t *testing.T) {
+		outDir := t.TempDir()
+		t.Chdir(outDir)
+
+		if err := os.WriteFile(filepath.Join(outDir, "postprocess.yaml"), []byte(""), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(outDir, "owl-bot-staging"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		metadata := `{"repo": {"name_pretty": "My API"}}`
+		if err := os.WriteFile(filepath.Join(outDir, ".repo-metadata.json"), []byte(metadata), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(outDir, "template"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "template", "README.md.go.tmpl"), []byte("dummy"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		p := libraryPostProcessParams{
+			outDir:             outDir,
+			UseGoPostprocessor: true,
+			cfg: &config.Config{
+				Default: &config.Default{
+					Java: &config.JavaModule{
+						LibrariesBOMVersion: "1.0.0",
+					},
+				},
+				Libraries: []*config.Library{
+					{Name: "google-cloud-java", Version: "1.2.3"},
+				},
+			},
+			library: &config.Library{
+				Name:    "test-library",
+				Version: "1.2.3",
+			},
+		}
+		err := postProcessLibrary(t.Context(), p)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+	})
 }

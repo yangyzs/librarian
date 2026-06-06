@@ -60,11 +60,11 @@ type postProcessParams struct {
 }
 
 type libraryPostProcessParams struct {
-	cfg        *config.Config
-	library    *config.Library
-	outDir     string
-	metadata   *repoMetadata
-	transports map[string]serviceconfig.Transport
+	cfg                *config.Config
+	library            *config.Library
+	outDir             string
+	metadata           *repoMetadata
+	transports         map[string]serviceconfig.Transport
 	UseGoPostprocessor bool
 }
 

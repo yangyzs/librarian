@@ -28,7 +28,7 @@ If you are using Maven with [BOM][libraries-bom], add this to your pom.xml file:
 ```
 
 If you are using Maven without the BOM, add this to your dependencies:
-{{- else if and .Monorepo (or (eq .GroupID "com.google.cloud") (eq .GroupID "com.google.analytics") (eq .GroupID "com.google.area120")) }}
+{{ else if and .Monorepo (or (eq .GroupID "com.google.cloud") (eq .GroupID "com.google.analytics") (eq .GroupID "com.google.area120")) }}
 If you are using Maven with [BOM][libraries-bom], add this to your pom.xml file:
 
 ```xml
@@ -55,7 +55,6 @@ If you are using Maven with [BOM][libraries-bom], add this to your pom.xml file:
 If you are using Maven without the BOM, add this to your dependencies:
 {{ else }}If you are using Maven, add this to your pom.xml file:
 {{ end }}
-
 
 ```xml
 {{ if and .Metadata.Snippets (index .Metadata.Snippets (print .Metadata.Repo.APIShortname "_install_without_bom")) -}}

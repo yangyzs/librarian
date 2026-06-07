@@ -1,0 +1,132 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package java
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"text/template"
+)
+
+func TestRenderREADME(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create dummy template
+	templatePath := filepath.Join(tmpDir, "README.md.go.tmpl")
+	templateContent := `# Google {{ .Metadata.Repo.NamePretty }} Client for Java
+Artifact: {{ .GroupID }}:{{ .ArtifactID }}
+Version: {{ .Version }}
+BOMVersion: {{ .BOMVersion }}
+LibraryVersion: {{ .LibraryVersion }}
+{{ if and .Metadata.Partials .Metadata.Partials.About }}
+About: {{ .Metadata.Partials.About }}
+{{ end }}
+`
+	err := os.WriteFile(templatePath, []byte(templateContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create dummy metadata
+	metadataPath := filepath.Join(tmpDir, ".repo-metadata.json")
+	metadataContent := `{
+  "repo": {
+    "name_pretty": "My API",
+    "distribution_name": "com.google.cloud:google-cloud-myapi",
+    "repo": "googleapis/google-cloud-java"
+  },
+  "library_version": "1.2.3"
+}`
+	err = os.WriteFile(metadataPath, []byte(metadataContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test case 1: Without partials
+	err = RenderREADME(tmpDir, templatePath, "1.0.0-BOM", "1.2.3-LIB")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outputPath := filepath.Join(tmpDir, "README.md")
+	outputContent, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := `# Google My API Client for Java
+Artifact: com.google.cloud:google-cloud-myapi
+Version: 1.2.3
+BOMVersion: 1.0.0-BOM
+LibraryVersion: 1.2.3-LIB
+`
+	if strings.TrimSpace(string(outputContent)) != strings.TrimSpace(expected) {
+		t.Errorf("expected:\n%s\ngot:\n%s", expected, string(outputContent))
+	}
+
+	// Test case 2: With partials
+	partialsPath := filepath.Join(tmpDir, ".readme-partials.yaml")
+	partialsContent := `about: "This is a great API."`
+	err = os.WriteFile(partialsPath, []byte(partialsContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = RenderREADME(tmpDir, templatePath, "1.0.0-BOM", "1.2.3-LIB")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outputContent, err = os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedWithPartials := `# Google My API Client for Java
+Artifact: com.google.cloud:google-cloud-myapi
+Version: 1.2.3
+BOMVersion: 1.0.0-BOM
+LibraryVersion: 1.2.3-LIB
+
+About: This is a great API.
+`
+	if strings.TrimSpace(string(outputContent)) != strings.TrimSpace(expectedWithPartials) {
+		t.Errorf("expected:\n%s\ngot:\n%s", expectedWithPartials, string(outputContent))
+	}
+}
+
+func TestRealTemplateParses(t *testing.T) {
+	// Find template path
+	// Current dir is internal/librarian/java when running tests in this package.
+	templatePath := filepath.Join("template", "README.md.tmpl")
+
+	tmplBytes, err := os.ReadFile(templatePath)
+	if err != nil {
+		// If running from repo root, path might be different.
+		// Let's try to find it relative to repo root if needed.
+		templatePath = filepath.Join("internal", "librarian", "java", "template", "README.md.go.tmpl")
+		tmplBytes, err = os.ReadFile(templatePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, err = template.New("README").Parse(string(tmplBytes))
+	if err != nil {
+		t.Fatalf("failed to parse real template: %v", err)
+	}
+}

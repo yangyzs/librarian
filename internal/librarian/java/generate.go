@@ -57,13 +57,14 @@ var (
 )
 
 type generateAPIParams struct {
-	cfg      *config.Config
-	api      *config.API
-	library  *config.Library
-	srcCfg   *sources.SourceConfig
-	outdir   string
-	metadata *repoMetadata
-	apiCfg   *serviceconfig.API
+	cfg                *config.Config
+	api                *config.API
+	library            *config.Library
+	srcCfg             *sources.SourceConfig
+	outdir             string
+	metadata           *repoMetadata
+	apiCfg             *serviceconfig.API
+	useGoPostprocessor bool
 }
 
 // Generate generates a Java client library.
@@ -97,13 +98,14 @@ func Generate(ctx context.Context, cfg *config.Config, library *config.Library, 
 		transports[api.Path] = apiCfg.Transport(config.LanguageJava)
 		// metadata is needed for pom.xml generation in post process
 		if err := generateAPI(ctx, generateAPIParams{
-			cfg:      cfg,
-			api:      api,
-			library:  library,
-			srcCfg:   srcCfg,
-			outdir:   outdir,
-			metadata: metadata,
-			apiCfg:   apiCfg,
+			cfg:                cfg,
+			api:                api,
+			library:            library,
+			srcCfg:             srcCfg,
+			outdir:             outdir,
+			metadata:           metadata,
+			apiCfg:             apiCfg,
+			useGoPostprocessor: useGoPostprocessor,
 		}); err != nil {
 			return fmt.Errorf("failed to generate api %q: %w", api.Path, err)
 		}
@@ -139,13 +141,14 @@ func generateAPI(ctx context.Context, params generateAPIParams) error {
 		additionalProtosToCopyRel := processAdditionalProtos(javaAPI, googleapisDir)
 
 	postParams := postProcessParams{
-		cfg:            params.cfg,
-		library:        params.library,
-		javaAPI:        javaAPI,
-		metadata:       params.metadata,
-		outDir:         params.outdir,
-		apiBase:        deriveAPIBase(params.library, params.api.Path),
-		includeSamples: *javaAPI.Samples,
+		cfg:                params.cfg,
+		library:            params.library,
+		javaAPI:            javaAPI,
+		metadata:           params.metadata,
+		outDir:             params.outdir,
+		apiBase:            deriveAPIBase(params.library, params.api.Path),
+		includeSamples:     *javaAPI.Samples,
+		UseGoPostprocessor: params.useGoPostprocessor,
 	}
 	gapicDir := postParams.gapicDir()
 	gRPCDir := postParams.gRPCDir()

@@ -49,14 +49,15 @@ type protoFileToCopy struct {
 }
 
 type postProcessParams struct {
-	cfg            *config.Config
-	library        *config.Library
-	javaAPI        *config.JavaAPI
-	metadata       *repoMetadata
-	outDir         string
-	apiBase        string
-	protosToCopy   []protoFileToCopy
-	includeSamples bool
+	cfg                *config.Config
+	library            *config.Library
+	javaAPI            *config.JavaAPI
+	metadata           *repoMetadata
+	outDir             string
+	apiBase            string
+	protosToCopy       []protoFileToCopy
+	includeSamples     bool
+	UseGoPostprocessor bool
 }
 
 type libraryPostProcessParams struct {
@@ -72,7 +73,18 @@ func postProcessLibrary(ctx context.Context, params libraryPostProcessParams) er
 	if params.UseGoPostprocessor {
 		yamlPath := filepath.Join(params.outDir, "postprocess.yaml")
 		if _, err := os.Stat(yamlPath); err == nil {
-			return postProcessLibraryNew(params)
+			if err := postProcessLibraryNew(params); err != nil {
+				return err
+			}
+
+			monorepoVersion, err := findMonorepoVersion(params.cfg)
+			if err != nil {
+				return err
+			}
+			if err := syncPOMs(params.library, params.outDir, monorepoVersion, params.metadata, params.transports); err != nil {
+				return fmt.Errorf("%w: %w", errSyncPOMs, err)
+			}
+			return nil
 		}
 	}
 	if err := createOrVerifyOwlbotPy(params.outDir); err != nil {
@@ -132,6 +144,38 @@ func postProcessAPI(ctx context.Context, params postProcessParams) error {
 	if err := copyFiles(params); err != nil {
 		return fmt.Errorf("failed to copy files: %w", err)
 	}
+	coords := params.coords()
+
+	if params.UseGoPostprocessor {
+		yamlPath := filepath.Join(params.outDir, "postprocess.yaml")
+		if _, err := os.Stat(yamlPath); err == nil {
+			keepSet := make(map[string]bool)
+			for _, k := range params.library.Keep {
+				keepSet[strings.TrimSuffix(filepath.ToSlash(k), "/")] = true
+			}
+			if err := restructureModules(params, params.outDir, keepSet, params.outDir); err != nil {
+				return fmt.Errorf("failed to restructure direct to outDir: %w", err)
+			}
+
+			protoModuleRepoRoot := filepath.Join(params.outDir, coords.Proto.ArtifactID)
+			shouldGenerate, err := clirrIgnoreShouldGenerate(coords.Proto.ArtifactID, protoModuleRepoRoot, params.javaAPI.Monolithic)
+			if err != nil {
+				return fmt.Errorf("failed to check for clirr ignore file: %w", err)
+			}
+			if shouldGenerate {
+				if err := generateClirrIgnore(protoModuleRepoRoot); err != nil {
+					return fmt.Errorf("failed to generate clirr ignore file: %w", err)
+				}
+			}
+
+			// Cleanup intermediate protoc output directory
+			if err := os.RemoveAll(filepath.Join(params.outDir, params.apiBase)); err != nil {
+				return fmt.Errorf("failed to cleanup intermediate files: %w", err)
+			}
+			return nil
+		}
+	}
+
 	if err := restructureToStaging(params); err != nil {
 		return fmt.Errorf("failed to restructure to staging: %w", err)
 	}
@@ -139,7 +183,6 @@ func postProcessAPI(ctx context.Context, params postProcessParams) error {
 	// Generate clirr-ignored-differences.xml for the proto module.
 	// We target the staging directory because runOwlBot hasn't moved the files
 	// to their final destination yet.
-	coords := params.coords()
 	protoModuleRepoRoot := filepath.Join(params.outDir, coords.Proto.ArtifactID)
 	shouldGenerate, err := clirrIgnoreShouldGenerate(coords.Proto.ArtifactID, protoModuleRepoRoot, params.javaAPI.Monolithic)
 	if err != nil {
@@ -274,7 +317,7 @@ func restructureToStaging(params postProcessParams) error {
 	if err := os.MkdirAll(destRoot, 0755); err != nil {
 		return fmt.Errorf("failed to create staging directory: %w", err)
 	}
-	return restructureModules(params, destRoot)
+	return restructureModules(params, destRoot, nil, "")
 }
 
 type moveAction struct {
@@ -282,14 +325,34 @@ type moveAction struct {
 	description string
 }
 
-func restructure(actions []moveAction) error {
+func restructure(actions []moveAction, keepSet map[string]bool, libraryRoot string) error {
 	for _, action := range actions {
 		if _, err := os.Stat(action.src); err == nil {
 			if err := os.MkdirAll(action.dest, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", action.dest, err)
 			}
-			if err := filesystem.MoveAndMerge(action.src, action.dest); err != nil {
-				return fmt.Errorf("failed to move %s: %w", action.description, err)
+			if keepSet != nil {
+				keepFunc := func(p string) bool {
+					if shouldPreserve(p, keepSet) {
+						return true
+					}
+					// Also preserve existing files that lack the auto-generated marker.
+					destPath := filepath.Join(libraryRoot, p)
+					if _, err := os.Stat(destPath); err == nil {
+						isGen, err := hasMarker(destPath)
+						if err == nil && !isGen {
+							return true
+						}
+					}
+					return false
+				}
+				if err := filesystem.MoveAndMergeWithKeep(action.src, action.dest, libraryRoot, keepFunc); err != nil {
+					return fmt.Errorf("failed to move with keep %s: %w", action.description, err)
+				}
+			} else {
+				if err := filesystem.MoveAndMerge(action.src, action.dest); err != nil {
+					return fmt.Errorf("failed to move %s: %w", action.description, err)
+				}
 			}
 		}
 	}
@@ -299,7 +362,7 @@ func restructure(actions []moveAction) error {
 // restructureModules moves the generated code from the temporary versioned directory
 // tree into the destination root directory for GAPIC, Proto, gRPC, and samples.
 // It also copies the relevant proto files into the proto module.
-func restructureModules(params postProcessParams, destRoot string) error {
+func restructureModules(params postProcessParams, destRoot string, keepSet map[string]bool, libraryRoot string) error {
 	coords := params.coords()
 	tempProtoSrcDir := params.protoDir()
 	if params.library.Name != commonProtosLibrary {
@@ -365,7 +428,7 @@ func restructureModules(params postProcessParams, destRoot string) error {
 			description: "samples",
 		})
 	}
-	if err := restructure(actions); err != nil {
+	if err := restructure(actions, keepSet, libraryRoot); err != nil {
 		return err
 	}
 	// Copy proto files to proto-*/src/main/proto

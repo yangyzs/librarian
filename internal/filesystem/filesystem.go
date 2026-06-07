@@ -60,6 +60,63 @@ func MoveAndMerge(sourceDir, targetDir string) error {
 	return nil
 }
 
+// MoveAndMergeWithKeep moves entries from sourceDir to targetDir.
+// It merges directories recursively if they exist in both source and target.
+// If an entry in sourceDir is a file that already exists in targetDir:
+// - If keepFunc is not nil and returns true for the path relative to libraryRoot, it is preserved (source is deleted).
+// - Otherwise, the target is overwritten.
+func MoveAndMergeWithKeep(sourceDir, targetDir, libraryRoot string, keepFunc func(string) bool) error {
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		oldPath := filepath.Join(sourceDir, entry.Name())
+		newPath := filepath.Join(targetDir, entry.Name())
+		if entry.IsDir() {
+			if _, err := os.Stat(newPath); err == nil {
+				// Destination exists, merge contents.
+				if err := MoveAndMergeWithKeep(oldPath, newPath, libraryRoot, keepFunc); err != nil {
+					return err
+				}
+				// Remove the now-empty source directory after successful merge.
+				if err := os.Remove(oldPath); err != nil {
+					return err
+				}
+				continue
+			}
+		} else {
+			if _, err := os.Stat(newPath); err == nil {
+				rel, err := filepath.Rel(libraryRoot, newPath)
+				if err != nil {
+					return err
+				}
+				if keepFunc != nil && keepFunc(filepath.ToSlash(rel)) {
+					// Preserve the target file, remove the source file.
+					if err := os.Remove(oldPath); err != nil {
+						return err
+					}
+					continue
+				}
+				// Overwrite existing file
+				if err := os.Remove(newPath); err != nil {
+					return err
+				}
+			}
+		}
+		if err := os.Rename(oldPath, newPath); err != nil {
+			// Fallback for cross-device links
+			if err := CopyFile(oldPath, newPath); err != nil {
+				return err
+			}
+			if err := os.Remove(oldPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // CopyFile copies a file from src to dest.
 func CopyFile(src, dest string) error {
 	in, err := os.Open(src)

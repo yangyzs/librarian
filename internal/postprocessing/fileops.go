@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/googleapis/librarian/internal/filesystem"
 )
 
@@ -34,6 +35,37 @@ var errTextNotFound = errors.New("text not found")
 // interface for all postprocessing file operations.
 func CopyFile(src, dst string) error {
 	return filesystem.CopyFile(src, dst)
+}
+
+// Replace replaces all instances of original with replacement in the file at path.
+// It supports glob patterns if path contains glob characters.
+func Replace(path, original, replacement string) error {
+	var files []string
+	var err error
+
+	if strings.ContainsAny(path, "*?[]{}") {
+		files, err = doublestar.FilepathGlob(path)
+		if err != nil {
+			return err
+		}
+	} else {
+		files = []string{path}
+	}
+
+	for _, f := range files {
+		content, err := os.ReadFile(f)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // Silently ignore missing files, like synthtool
+			}
+			return err
+		}
+		newContent := strings.ReplaceAll(string(content), original, replacement)
+		if err := os.WriteFile(f, []byte(newContent), 0644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RemoveFile removes the file at the specified path.
@@ -76,4 +108,49 @@ func ReplaceRegex(path, pattern, replacement string) error {
 	}
 	newContent := re.ReplaceAll(content, []byte(replacement))
 	return os.WriteFile(path, newContent, 0644)
+}
+
+// ReplaceRegex replaces all instances of pattern with replacement in the file at path.
+// It converts Python-style capture groups like \g<1> to Go-style $1.
+// It supports glob patterns if path contains glob characters.
+func ReplaceRegex(path, pattern, replacement string) error {
+	var files []string
+	var err error
+
+	if strings.ContainsAny(path, "*?[]{}") {
+		files, err = doublestar.FilepathGlob(path)
+		if err != nil {
+			return err
+		}
+	} else {
+		files = []string{path}
+	}
+
+	// Convert Python-style capture groups \g<1> or \g<name> to Go-style $1 or $name
+	rePythonGroup := regexp.MustCompile(`\\g<(\w+)>`)
+	replacement = rePythonGroup.ReplaceAllString(replacement, `$$$1`)
+
+	// Convert Python-style numeric capture groups \1, \2 to Go-style $1, $2
+	rePythonNumGroup := regexp.MustCompile(`(^|[^\\])\\(\d+)`)
+	replacement = rePythonNumGroup.ReplaceAllString(replacement, `${1}$$${2}`)
+
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return err
+	}
+
+	for _, f := range files {
+		content, err := os.ReadFile(f)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // Silently ignore missing files, like synthtool
+			}
+			return err
+		}
+		newContent := re.ReplaceAllString(string(content), replacement)
+		if err := os.WriteFile(f, []byte(newContent), 0644); err != nil {
+			return err
+		}
+	}
+	return nil
 }

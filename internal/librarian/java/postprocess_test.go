@@ -227,7 +227,7 @@ func TestRestructureModules(t *testing.T) {
 		javaAPI:        &config.JavaAPI{},
 	}
 	destRoot := filepath.Join(tmpDir, "dest")
-	if err := restructureModules(params, destRoot); err != nil {
+	if err := restructureModules(params, destRoot, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -274,7 +274,7 @@ func TestRestructureModules_CommonProtos(t *testing.T) {
 		},
 	}
 	destRoot := filepath.Join(tmpDir, "dest")
-	if err := restructureModules(params, destRoot); err != nil {
+	if err := restructureModules(params, destRoot, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	wantPath := filepath.Join(destRoot, "proto-google-common-protos", "src", "main", "java", "com", "google", "cloud", "location", "LocationsProto.java")
@@ -302,7 +302,7 @@ func TestRestructureModules_ShouldRemoveClasses(t *testing.T) {
 		javaAPI:        &config.JavaAPI{},
 	}
 	destRoot := filepath.Join(tmpDir, "dest")
-	if err := restructureModules(params, destRoot); err != nil {
+	if err := restructureModules(params, destRoot, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	wantPath := filepath.Join(destRoot, "proto-google-cloud-secretmanager-v1", "src", "main", "java", "com", "google", "cloud", "location", "LocationsProto.java")
@@ -359,7 +359,7 @@ func TestRestructureModules_SamplesDisabled(t *testing.T) {
 		javaAPI:        &config.JavaAPI{},
 	}
 	destRoot := filepath.Join(tmpDir, "dest")
-	if err := restructureModules(params, destRoot); err != nil {
+	if err := restructureModules(params, destRoot, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	// Verify sample file location DOES NOT exist
@@ -415,7 +415,7 @@ func TestRestructureModules_Monolithic(t *testing.T) {
 		},
 	}
 	destRoot := filepath.Join(tmpDir, "dest", "src")
-	if err := restructureModules(params, destRoot); err != nil {
+	if err := restructureModules(params, destRoot, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 

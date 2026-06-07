@@ -95,25 +95,35 @@ func TestRemoveFile_Error(t *testing.T) {
 }
 
 func TestReplace(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.txt")
-	content := "Hello World"
-	original := "World"
-	replacement := "Go"
-	want := "Hello Go"
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := Replace(path, original, replacement); err != nil {
-		t.Fatal(err)
-	}
-	gotBytes, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := string(gotBytes)
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("mismatch (-want +got):\n%s", diff)
+	t.Parallel()
+	for _, test := range []struct {
+		name        string
+		content     string
+		original    string
+		replacement string
+		want        string
+	}{
+		{"success", "Hello World", "World", "Go", "Hello Go"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			path := filepath.Join(dir, "test.txt")
+			if err := os.WriteFile(path, []byte(test.content), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := Replace(path, test.original, test.replacement); err != nil {
+				t.Fatal(err)
+			}
+			gotBytes, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := string(gotBytes)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -139,6 +149,27 @@ func TestReplaceRegex(t *testing.T) {
 			pattern:     `\d+`,
 			replacement: "Number",
 			want:        "Hello Number World",
+		},
+		{
+			name:        "python style capture group",
+			content:     "Hello World",
+			pattern:     `(Hello) (World)`,
+			replacement: `\g<2> \g<1>`,
+			want:        "World Hello",
+		},
+		{
+			name:        "python style capture group with named group",
+			content:     "Hello World",
+			pattern:     `(?P<first>Hello) (?P<second>World)`,
+			replacement: `\g<second> \g<first>`,
+			want:        "World Hello",
+		},
+		{
+			name:        "python style numeric capture group",
+			content:     "Hello World",
+			pattern:     `(Hello) (World)`,
+			replacement: `\2 \1`,
+			want:        "World Hello",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

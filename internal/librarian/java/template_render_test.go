@@ -25,8 +25,6 @@ import (
 func TestRenderREADME(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create dummy template
-	templatePath := filepath.Join(tmpDir, "README.md.go.tmpl")
 	templateContent := `# Google {{ .Metadata.Repo.NamePretty }} Client for Java
 Artifact: {{ .GroupID }}:{{ .ArtifactID }}
 Version: {{ .Version }}
@@ -36,10 +34,11 @@ LibraryVersion: {{ .LibraryVersion }}
 About: {{ .Metadata.Partials.About }}
 {{ end }}
 `
-	err := os.WriteFile(templatePath, []byte(templateContent), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
+	oldTemplate := readmeTemplate
+	readmeTemplate = templateContent
+	defer func() {
+		readmeTemplate = oldTemplate
+	}()
 
 	// Create dummy metadata
 	metadataPath := filepath.Join(tmpDir, ".repo-metadata.json")
@@ -51,13 +50,13 @@ About: {{ .Metadata.Partials.About }}
   },
   "library_version": "1.2.3"
 }`
-	err = os.WriteFile(metadataPath, []byte(metadataContent), 0644)
+	err := os.WriteFile(metadataPath, []byte(metadataContent), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Test case 1: Without partials
-	err = RenderREADME(tmpDir, templatePath, "1.0.0-BOM", "1.2.3-LIB")
+	err = RenderREADME(tmpDir, "1.0.0-BOM", "1.2.3-LIB")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +85,7 @@ LibraryVersion: 1.2.3-LIB
 		t.Fatal(err)
 	}
 
-	err = RenderREADME(tmpDir, templatePath, "1.0.0-BOM", "1.2.3-LIB")
+	err = RenderREADME(tmpDir, "1.0.0-BOM", "1.2.3-LIB")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,22 +109,7 @@ About: This is a great API.
 }
 
 func TestRealTemplateParses(t *testing.T) {
-	// Find template path
-	// Current dir is internal/librarian/java when running tests in this package.
-	templatePath := filepath.Join("template", "README.md.tmpl")
-
-	tmplBytes, err := os.ReadFile(templatePath)
-	if err != nil {
-		// If running from repo root, path might be different.
-		// Let's try to find it relative to repo root if needed.
-		templatePath = filepath.Join("internal", "librarian", "java", "template", "README.md.go.tmpl")
-		tmplBytes, err = os.ReadFile(templatePath)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	_, err = template.New("README").Parse(string(tmplBytes))
+	_, err := template.New("README").Parse(readmeTemplate)
 	if err != nil {
 		t.Fatalf("failed to parse real template: %v", err)
 	}

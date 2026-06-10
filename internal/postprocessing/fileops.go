@@ -134,6 +134,10 @@ func ReplaceRegex(path, pattern, replacement string) error {
 	rePythonNumGroup := regexp.MustCompile(`(^|[^\\])\\(\d+)`)
 	replacement = rePythonNumGroup.ReplaceAllString(replacement, `${1}$$${2}`)
 
+	if !strings.HasPrefix(pattern, "(?") {
+		pattern = "(?m)" + pattern
+	}
+
 	re, err := regexp.Compile(pattern)
 	if err != nil {
 		return err

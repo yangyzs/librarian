@@ -37,8 +37,16 @@ func postProcessLibraryNew(p libraryPostProcessParams) error {
 			return fmt.Errorf("failed to parse postprocess.yaml: %w", err)
 		}
 
+		keepSet := make(map[string]bool)
+		for _, k := range p.library.Keep {
+			keepSet[strings.TrimSuffix(filepath.ToSlash(k), "/")] = true
+		}
+
 		// 1. Apply Copies
 		for _, c := range cfg.CopyFile {
+			if shouldPreserve(filepath.ToSlash(c.Dst), keepSet) {
+				continue
+			}
 			srcAbs := filepath.Join(p.outDir, c.Src)
 			dstAbs := filepath.Join(p.outDir, c.Dst)
 			if err := filesystem.CopyFile(srcAbs, dstAbs); err != nil {
@@ -48,70 +56,76 @@ func postProcessLibraryNew(p libraryPostProcessParams) error {
 
 		// 2. Apply Removes
 		for _, rem := range cfg.RemoveFile {
-			absPath := filepath.Join(p.outDir, rem)
-			if err := postprocessing.RemoveFile(absPath); err != nil {
-				return fmt.Errorf("failed to remove file %s: %w", rem, err)
+			if err := applyToFiles(p.outDir, rem, keepSet, func(file string) error {
+				if err := postprocessing.RemoveFile(file); err != nil {
+					return fmt.Errorf("failed to remove file %s: %w", file, err)
+				}
+				return nil
+			}); err != nil {
+				return err
 			}
 		}
 
 		// 3. Apply Replacements
 		for _, r := range cfg.Replace {
-			absPath := filepath.Join(p.outDir, r.Path)
-			if err := postprocessing.Replace(absPath, r.Original, r.Replacement); err != nil {
-				return fmt.Errorf("failed to apply replacement in %s: %w", r.Path, err)
+			if err := applyToFiles(p.outDir, r.Path, keepSet, func(file string) error {
+				if err := postprocessing.Replace(file, r.Original, r.Replacement); err != nil {
+					return fmt.Errorf("failed to apply replacement in %s: %w", file, err)
+				}
+				return nil
+			}); err != nil {
+				return err
 			}
 		}
 
 		// 4. Apply Regex Replacements
 		for _, r := range cfg.ReplaceRegex {
-			absPath := filepath.Join(p.outDir, r.Path)
-			if err := postprocessing.ReplaceRegex(absPath, r.Pattern, r.Replacement); err != nil {
-				return fmt.Errorf("failed to apply regex replacement in %s: %w", r.Path, err)
+			if err := applyToFiles(p.outDir, r.Path, keepSet, func(file string) error {
+				if err := postprocessing.ReplaceRegex(file, r.Pattern, r.Replacement); err != nil {
+					return fmt.Errorf("failed to apply regex replacement in %s: %w", file, err)
+				}
+				return nil
+			}); err != nil {
+				return err
 			}
 		}
 
 		// 5. Apply Method Operations
 		for _, mo := range cfg.MethodOperations {
-			files, err := resolveGlobs(p.outDir, mo.Path)
-			if err != nil {
-				return fmt.Errorf("failed to resolve glob for %s: %w", mo.Path, err)
-			}
-			for _, file := range files {
+			if err := applyToFiles(p.outDir, mo.Path, keepSet, func(file string) error {
 				switch mo.Action {
 				case "delete":
 					if err := postprocessing.DeleteFunc(file, mo.FuncName, "java"); err != nil {
 						if strings.Contains(err.Error(), "not found") {
-							continue
+							return nil
 						}
 						return fmt.Errorf("failed to delete method %q in %s: %w", mo.FuncName, file, err)
 					}
 				case "duplicate":
 					if err := postprocessing.DuplicateMethod(file, mo.FuncName, mo.NewName, "java"); err != nil {
 						if strings.Contains(err.Error(), "not found") {
-							continue
+							return nil
 						}
 						return fmt.Errorf("failed to duplicate method %q in %s: %w", mo.FuncName, file, err)
 					}
 				case "deprecate":
 					if err := postprocessing.DeprecateMethod(file, mo.FuncName, mo.DeprecationMessage, "java"); err != nil {
 						if strings.Contains(err.Error(), "not found") {
-							continue
+							return nil
 						}
 						return fmt.Errorf("failed to deprecate method %q in %s: %w", mo.FuncName, file, err)
 					}
 				default:
 					return fmt.Errorf("unsupported method operation action %q", mo.Action)
 				}
+				return nil
+			}); err != nil {
+				return err
 			}
 		}
 	}
 
-	// 4. Render README.md
-	templatePath := filepath.Join("template", "README.md.go.tmpl")
-	if _, err := os.Stat(templatePath); err != nil {
-		// Fallback to absolute path for this workspace
-		templatePath = "/usr/local/google/home/sophieeee/workspace/owlbot-modernization/librarian/internal/librarian/java/template/README.md.go.tmpl"
-	}
+	// 6. Render README.md
 
 	libraryVersion, err := deriveLastReleasedVersion(p.library.Version)
 	if err != nil {
@@ -133,7 +147,7 @@ func postProcessLibraryNew(p libraryPostProcessParams) error {
 		return fmt.Errorf("failed to find BOM version: %w", err)
 	}
 
-	if err := RenderREADME(p.outDir, templatePath, bomVersion, libraryVersion); err != nil {
+	if err := RenderREADME(p.outDir, bomVersion, libraryVersion); err != nil {
 		return fmt.Errorf("failed to render README: %w", err)
 	}
 
@@ -145,4 +159,21 @@ func resolveGlobs(outDir, pathPattern string) ([]string, error) {
 		return doublestar.FilepathGlob(filepath.Join(outDir, pathPattern))
 	}
 	return []string{filepath.Join(outDir, pathPattern)}, nil
+}
+
+func applyToFiles(outDir string, pathPattern string, keepSet map[string]bool, action func(string) error) error {
+	files, err := resolveGlobs(outDir, pathPattern)
+	if err != nil {
+		return fmt.Errorf("failed to resolve glob for %s: %w", pathPattern, err)
+	}
+	for _, file := range files {
+		relPath, _ := filepath.Rel(outDir, file)
+		if shouldPreserve(filepath.ToSlash(relPath), keepSet) {
+			continue
+		}
+		if err := action(file); err != nil {
+			return err
+		}
+	}
+	return nil
 }

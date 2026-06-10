@@ -68,10 +68,16 @@ func ExtractSamples(dir string) ([]map[string]interface{}, error) {
 			}
 			return err
 		}
-		if d.IsDir() && d.Name() == "test" {
-			return filepath.SkipDir
+		if d.IsDir() {
+			if d.Name() == "test" {
+				return filepath.SkipDir
+			}
+			if d.Name() == "generated" && filepath.Base(filepath.Dir(path)) == "snippets" {
+				return filepath.SkipDir
+			}
+			return nil
 		}
-		if !d.IsDir() && d.Type().IsRegular() && filepath.Ext(path) == ".java" && !strings.Contains(filepath.ToSlash(path), "/src/test/") {
+		if !d.IsDir() && d.Type().IsRegular() && filepath.Ext(path) == ".java" && strings.Contains(filepath.ToSlash(path), "/src/main/java/") {
 			files = append(files, path)
 		}
 		return nil
@@ -147,6 +153,9 @@ func ExtractSnippets(dir string) (map[string]string, error) {
 		}
 		if d.IsDir() {
 			if d.Name() == "test" {
+				return filepath.SkipDir
+			}
+			if d.Name() == "generated" && filepath.Base(filepath.Dir(path)) == "snippets" {
 				return filepath.SkipDir
 			}
 			return nil

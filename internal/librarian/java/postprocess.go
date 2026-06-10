@@ -339,9 +339,11 @@ func restructure(actions []moveAction, keepSet map[string]bool, libraryRoot stri
 					// Also preserve existing files that lack the auto-generated marker.
 					destPath := filepath.Join(libraryRoot, p)
 					if _, err := os.Stat(destPath); err == nil {
-						isGen, err := hasMarker(destPath)
-						if err == nil && !isGen {
-							return true
+						if filepath.Ext(destPath) == ".java" {
+							isGen, err := hasMarker(destPath)
+							if err == nil && !isGen {
+								return true
+							}
 						}
 					}
 					return false
@@ -378,11 +380,12 @@ func restructureModules(params postProcessParams, destRoot string, keepSet map[s
 	protoFilesDestDir := filepath.Join(destRoot, coords.Proto.ArtifactID, "src", "main", "proto")
 
 	if params.javaAPI.Monolithic {
-		protoDest = filepath.Join(destRoot, "main", "java")
-		grpcDest = filepath.Join(destRoot, "main", "java")
-		gapicMainDest = filepath.Join(destRoot, "main")
-		gapicTestDest = filepath.Join(destRoot, "test")
-		protoFilesDestDir = filepath.Join(destRoot, "main", "proto")
+		protoDest = filepath.Join(destRoot, "src", "main", "java")
+		grpcDest = filepath.Join(destRoot, "src", "main", "java")
+		gapicMainDest = filepath.Join(destRoot, "src", "main")
+		gapicTestDest = filepath.Join(destRoot, "src", "test")
+		protoFilesDestDir = filepath.Join(destRoot, "src", "main", "proto")
+	}
 	}
 
 	var actions []moveAction

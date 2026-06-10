@@ -414,16 +414,16 @@ func TestRestructureModules_Monolithic(t *testing.T) {
 			Monolithic: true,
 		},
 	}
-	destRoot := filepath.Join(tmpDir, "dest", "src")
+	destRoot := filepath.Join(tmpDir, "dest")
 	if err := restructureModules(params, destRoot, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 
 	// Verify all files are in the same src directory
 	files := []string{
-		filepath.Join(destRoot, "main", "java", "Gapic.java"),
-		filepath.Join(destRoot, "main", "java", "Grpc.java"),
-		filepath.Join(destRoot, "main", "java", "Proto.java"),
+		filepath.Join(destRoot, "src", "main", "java", "Gapic.java"),
+		filepath.Join(destRoot, "src", "main", "java", "Grpc.java"),
+		filepath.Join(destRoot, "src", "main", "java", "Proto.java"),
 	}
 	for _, f := range files {
 		if _, err := os.Stat(f); err != nil {
@@ -1220,6 +1220,9 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		p := libraryPostProcessParams{
 			outDir:             outDir,
 			UseGoPostprocessor: true,
+			metadata: &repoMetadata{
+				NamePretty: "test-library",
+			},
 			cfg: &config.Config{
 				Default: &config.Default{
 					Java: &config.JavaModule{
@@ -1233,6 +1236,10 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 			library: &config.Library{
 				Name:    "test-library",
 				Version: "1.2.3",
+				Java: &config.JavaModule{
+					GroupID:    "com.google.cloud",
+					ArtifactID: "test-library",
+				},
 			},
 		}
 		err := postProcessLibrary(t.Context(), p)

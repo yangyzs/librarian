@@ -11,6 +11,7 @@ Java idiomatic client for [{{ .Metadata.Repo.NamePretty }}][product-docs].
 {{ if and .Metadata.Partials .Metadata.Partials.DeprecationWarning }}{{ .Metadata.Partials.DeprecationWarning }}
 {{ end }}{{ if eq .Metadata.Repo.ReleaseLevel "preview" }}> Note: This client is a work-in-progress, and may occasionally
 > make backwards-incompatible changes.
+
 {{ end }}{{ if .MigratedSplitRepo }}:bus: In October 2022, this library has moved to
 [google-cloud-java/{{ .Metadata.Repo.RepoShort }}](
 https://github.com/googleapis/google-cloud-java/tree/main/{{ .Metadata.Repo.RepoShort }}).
@@ -196,7 +197,7 @@ and on [google-cloud-java][g-c-j].
 
 ## Versioning
 
-{{ if and .Metadata.Partials .Metadata.Partials.Versioning }}
+{{- if and .Metadata.Partials .Metadata.Partials.Versioning }}
 {{ .Metadata.Partials.Versioning }}
 {{ else }}
 This library follows [Semantic Versioning](http://semver.org/).

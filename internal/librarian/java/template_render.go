@@ -15,6 +15,7 @@
 package java
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,6 +27,9 @@ import (
 	"github.com/iancoleman/strcase"
 	"gopkg.in/yaml.v3"
 )
+
+//go:embed template/README.md.go.tmpl
+var readmeTemplate string
 
 func isNilOrEmpty(v interface{}) bool {
 	if v == nil {
@@ -41,8 +45,7 @@ func isNilOrEmpty(v interface{}) bool {
 
 // RenderREADME renders the README.md file using the template and metadata.
 // dir is the directory containing .repo-metadata.json and where README.md will be written.
-// templatePath is the path to the README.md.go.tmpl file.
-func RenderREADME(dir, templatePath, bomVersion, libraryVersion string) error {
+func RenderREADME(dir, bomVersion, libraryVersion string) error {
 	metadataPath := filepath.Join(dir, ".repo-metadata.json")
 	partialsPath := filepath.Join(dir, ".readme-partials.yaml")
 	if _, err := os.Stat(partialsPath); os.IsNotExist(err) {
@@ -210,13 +213,8 @@ func RenderREADME(dir, templatePath, bomVersion, libraryVersion string) error {
 		LibraryVersion:    libraryVersion,
 	}
 
-	// Read and parse template
-	tmplBytes, err := os.ReadFile(templatePath)
-	if err != nil {
-		return fmt.Errorf("failed to read template: %w", err)
-	}
-
-	tmpl, err := template.New("README").Parse(string(tmplBytes))
+	// Parse template
+	tmpl, err := template.New("README").Parse(readmeTemplate)
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}

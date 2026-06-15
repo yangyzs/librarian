@@ -15,6 +15,7 @@
 package java
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,11 +29,11 @@ import (
 // postProcessLibraryNew implements the new postprocessing flow, bypassing owlbot.py.
 // It applies operations from postprocess.yaml, and renders the README.md directly
 // on the generated files in their final destinations.
-func postProcessLibraryNew(p libraryPostProcessParams) error {
+func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) error {
 	// 1. Load postprocess.yaml and apply operations
 	postprocessYamlPath := filepath.Join(p.outDir, "postprocess.yaml")
 	if _, err := os.Stat(postprocessYamlPath); err == nil {
-		cfg, err := postprocessing.ParseConfig(postprocessYamlPath)
+		cfg, err := postprocessing.ParseConfig(ctx, postprocessYamlPath)
 		if err != nil {
 			return fmt.Errorf("failed to parse postprocess.yaml: %w", err)
 		}
@@ -95,21 +96,21 @@ func postProcessLibraryNew(p libraryPostProcessParams) error {
 			if err := applyToFiles(p.outDir, mo.Path, keepSet, func(file string) error {
 				switch mo.Action {
 				case "delete":
-					if err := postprocessing.DeleteFunc(file, mo.FuncName, "java"); err != nil {
+					if err := postprocessing.DeleteFunc(ctx, file, mo.FuncName, "java"); err != nil {
 						if strings.Contains(err.Error(), "not found") {
 							return nil
 						}
 						return fmt.Errorf("failed to delete method %q in %s: %w", mo.FuncName, file, err)
 					}
 				case "duplicate":
-					if err := postprocessing.DuplicateMethod(file, mo.FuncName, mo.NewName, "java"); err != nil {
+					if err := postprocessing.DuplicateMethod(ctx, file, mo.FuncName, mo.NewName, "java"); err != nil {
 						if strings.Contains(err.Error(), "not found") {
 							return nil
 						}
 						return fmt.Errorf("failed to duplicate method %q in %s: %w", mo.FuncName, file, err)
 					}
 				case "deprecate":
-					if err := postprocessing.DeprecateMethod(file, mo.FuncName, mo.DeprecationMessage, "java"); err != nil {
+					if err := postprocessing.DeprecateMethod(ctx, file, mo.FuncName, mo.DeprecationMessage, "java"); err != nil {
 						if strings.Contains(err.Error(), "not found") {
 							return nil
 						}

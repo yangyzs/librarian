@@ -101,7 +101,7 @@ method_operations:
 		},
 	}
 
-	err := postProcessLibraryNew(p)
+	err := postProcessLibraryNew(t.Context(), p)
 	if err != nil {
 		t.Fatal(err)
 	}

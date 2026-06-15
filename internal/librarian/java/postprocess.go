@@ -73,7 +73,7 @@ func postProcessLibrary(ctx context.Context, params libraryPostProcessParams) er
 	if params.UseGoPostprocessor {
 		yamlPath := filepath.Join(params.outDir, "postprocess.yaml")
 		if _, err := os.Stat(yamlPath); err == nil {
-			if err := postProcessLibraryNew(params); err != nil {
+			if err := postProcessLibraryNew(ctx, params); err != nil {
 				return err
 			}
 

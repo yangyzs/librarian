@@ -16,6 +16,7 @@ package postprocessing
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -129,5 +130,27 @@ func TestParseConfig_InvalidYAML(t *testing.T) {
 	_, err := ParseConfig(context.Background(), configPath)
 	if err == nil {
 		t.Error("ParseConfig() expected error for invalid YAML, got nil")
+	}
+}
+
+func TestParseConfig_InvalidSignature(t *testing.T) {
+	yamlContent := `
+method_operations:
+  - path: path/to/file.java
+    action: delete
+    func_name: "invalidSignatureNoParentheses"
+`
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "postprocess.yaml")
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ParseConfig(context.Background(), configPath)
+	if err == nil {
+		t.Fatal("ParseConfig() expected error for invalid signature, got nil")
+	}
+	if !errors.Is(err, errInvalidSignature) {
+		t.Errorf("expected error to wrap errInvalidSignature, got %v", err)
 	}
 }

@@ -17,7 +17,9 @@ package postprocessing
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/googleapis/librarian/internal/yaml"
 )
@@ -60,6 +62,18 @@ type CopyConfig struct {
 	Dst string `yaml:"dst"`
 }
 
+// Validate validates the postprocess configuration.
+func (c *Config) Validate() error {
+	for _, mo := range c.MethodOperations {
+		if mo.Action == "delete" {
+			if !strings.Contains(mo.FuncName, "(") || !strings.Contains(mo.FuncName, ")") {
+				return fmt.Errorf("%w: %q (must contain parameter list in parentheses)", errInvalidSignature, mo.FuncName)
+			}
+		}
+	}
+	return nil
+}
+
 // ParseConfig parses the postprocess.yaml file.
 func ParseConfig(ctx context.Context, path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -69,6 +83,9 @@ func ParseConfig(ctx context.Context, path string) (*Config, error) {
 	configPtr, err := yaml.Unmarshal[Config](data)
 	if err != nil {
 		return nil, err
+	}
+	if err := configPtr.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 	return configPtr, nil
 }

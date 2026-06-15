@@ -96,7 +96,7 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 			if err := applyToFiles(p.outDir, mo.Path, keepSet, func(file string) error {
 				switch mo.Action {
 				case "delete":
-					if err := postprocessing.DeleteFunc(ctx, file, mo.FuncName, "java"); err != nil {
+					if err := postprocessing.DeleteMethod(file, mo.FuncName, "java"); err != nil {
 						if strings.Contains(err.Error(), "not found") {
 							return nil
 						}

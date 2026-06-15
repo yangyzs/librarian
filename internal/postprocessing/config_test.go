@@ -15,6 +15,7 @@
 package postprocessing
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -57,7 +58,7 @@ method_operations:
 		t.Fatal(err)
 	}
 
-	got, err := ParseConfig(configPath)
+	got, err := ParseConfig(context.Background(), configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ method_operations:
 }
 
 func TestParseConfig_FileNotFound(t *testing.T) {
-	_, err := ParseConfig("non-existent-file.yaml")
+	_, err := ParseConfig(context.Background(), "non-existent-file.yaml")
 	if err == nil {
 		t.Error("ParseConfig() expected error for non-existent file, got nil")
 	}
@@ -125,7 +126,7 @@ func TestParseConfig_InvalidYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := ParseConfig(configPath)
+	_, err := ParseConfig(context.Background(), configPath)
 	if err == nil {
 		t.Error("ParseConfig() expected error for invalid YAML, got nil")
 	}

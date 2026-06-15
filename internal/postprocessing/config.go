@@ -16,9 +16,10 @@
 package postprocessing
 
 import (
+	"context"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	"github.com/googleapis/librarian/internal/yaml"
 )
 
 // Config represents the postprocess.yaml configuration.
@@ -60,14 +61,14 @@ type CopyConfig struct {
 }
 
 // ParseConfig parses the postprocess.yaml file.
-func ParseConfig(path string) (*Config, error) {
+func ParseConfig(ctx context.Context, path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	configPtr, err := yaml.Unmarshal[Config](data)
+	if err != nil {
 		return nil, err
 	}
-	return &config, nil
+	return configPtr, nil
 }

@@ -386,7 +386,6 @@ func restructureModules(params postProcessParams, destRoot string, keepSet map[s
 		gapicTestDest = filepath.Join(destRoot, "src", "test")
 		protoFilesDestDir = filepath.Join(destRoot, "src", "main", "proto")
 	}
-	}
 
 	var actions []moveAction
 	if shouldGenerateProto(params.javaAPI) {

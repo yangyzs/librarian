@@ -110,7 +110,7 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 						return fmt.Errorf("failed to duplicate method %q in %s: %w", mo.FuncName, file, err)
 					}
 				case "deprecate":
-					if err := postprocessing.DeprecateMethod(ctx, file, mo.FuncName, mo.DeprecationMessage, "java"); err != nil {
+					if err := postprocessing.DeprecateMethod(file, mo.FuncName, mo.DeprecationMessage, "java"); err != nil {
 						if strings.Contains(err.Error(), "not found") {
 							return nil
 						}

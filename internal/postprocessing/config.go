@@ -17,12 +17,15 @@ package postprocessing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/googleapis/librarian/internal/yaml"
 )
+
+var errEmptyNewName = errors.New("new method name is required and cannot be empty")
 
 // Config represents the postprocess.yaml configuration.
 type Config struct {
@@ -64,10 +67,35 @@ type CopyConfig struct {
 
 // Validate validates the postprocess configuration.
 func (c *Config) Validate() error {
+	for _, r := range c.Replace {
+		if strings.TrimSpace(r.Original) == "" {
+			return fmt.Errorf("replace rule original text to replace cannot be empty")
+		}
+	}
+	for _, r := range c.ReplaceRegex {
+		if strings.TrimSpace(r.Pattern) == "" {
+			return fmt.Errorf("replace_regex rule pattern cannot be empty")
+		}
+	}
 	for _, mo := range c.MethodOperations {
-		if mo.Action == "delete" {
+		switch mo.Action {
+		case "delete":
 			if !strings.Contains(mo.FuncName, "(") || !strings.Contains(mo.FuncName, ")") {
 				return fmt.Errorf("%w: %q (must contain parameter list in parentheses)", errInvalidSignature, mo.FuncName)
+			}
+		case "duplicate":
+			if !strings.Contains(mo.FuncName, "(") || !strings.Contains(mo.FuncName, ")") {
+				return fmt.Errorf("%w: %q (must contain parameter list in parentheses)", errInvalidSignature, mo.FuncName)
+			}
+			if strings.TrimSpace(mo.NewName) == "" {
+				return fmt.Errorf("%w for duplicate method signature %q", errEmptyNewName, mo.FuncName)
+			}
+		case "deprecate":
+			if !strings.Contains(mo.FuncName, "(") || !strings.Contains(mo.FuncName, ")") {
+				return fmt.Errorf("%w: %q (must contain parameter list in parentheses)", errInvalidSignature, mo.FuncName)
+			}
+			if strings.TrimSpace(mo.DeprecationMessage) == "" {
+				return fmt.Errorf("%w for deprecating method %q", errEmptyDeprecationMessage, mo.FuncName)
 			}
 		}
 	}

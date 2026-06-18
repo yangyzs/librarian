@@ -97,23 +97,14 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 				switch mo.Action {
 				case "delete":
 					if err := postprocessing.DeleteMethod(file, mo.FuncName, "java"); err != nil {
-						if strings.Contains(err.Error(), "not found") {
-							return nil
-						}
 						return fmt.Errorf("failed to delete method %q in %s: %w", mo.FuncName, file, err)
 					}
 				case "duplicate":
 					if err := postprocessing.DuplicateMethod(ctx, file, mo.FuncName, mo.NewName, "java"); err != nil {
-						if strings.Contains(err.Error(), "not found") {
-							return nil
-						}
 						return fmt.Errorf("failed to duplicate method %q in %s: %w", mo.FuncName, file, err)
 					}
 				case "deprecate":
 					if err := postprocessing.DeprecateMethod(file, mo.FuncName, mo.DeprecationMessage, "java"); err != nil {
-						if strings.Contains(err.Error(), "not found") {
-							return nil
-						}
 						return fmt.Errorf("failed to deprecate method %q in %s: %w", mo.FuncName, file, err)
 					}
 				default:

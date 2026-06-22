@@ -117,7 +117,7 @@ func Generate(ctx context.Context, cfg *config.Config, library *config.Library, 
 		outDir:             outdir,
 		metadata:           metadata,
 		transports:         transports,
-		UseGoPostprocessor: useGoPostprocessor,
+		useGoPostprocessor: useGoPostprocessor,
 	}); err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func generateAPI(ctx context.Context, params generateAPIParams) error {
 		outDir:             params.outdir,
 		apiBase:            deriveAPIBase(params.library, params.api.Path),
 		includeSamples:     *javaAPI.Samples,
-		UseGoPostprocessor: params.useGoPostprocessor,
+		useGoPostprocessor: params.useGoPostprocessor,
 	}
 	gapicDir := postParams.gapicDir()
 	gRPCDir := postParams.gRPCDir()

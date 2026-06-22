@@ -57,7 +57,7 @@ type postProcessParams struct {
 	apiBase            string
 	protosToCopy       []protoFileToCopy
 	includeSamples     bool
-	UseGoPostprocessor bool
+	useGoPostprocessor bool
 }
 
 type libraryPostProcessParams struct {
@@ -66,11 +66,11 @@ type libraryPostProcessParams struct {
 	outDir             string
 	metadata           *repoMetadata
 	transports         map[string]serviceconfig.Transport
-	UseGoPostprocessor bool
+	useGoPostprocessor bool
 }
 
 func postProcessLibrary(ctx context.Context, params libraryPostProcessParams) error {
-	if params.UseGoPostprocessor {
+	if params.useGoPostprocessor {
 		yamlPath := filepath.Join(params.outDir, "postprocess.yaml")
 		if _, err := os.Stat(yamlPath); err == nil {
 			if err := postProcessLibraryNew(ctx, params); err != nil {
@@ -146,7 +146,7 @@ func postProcessAPI(ctx context.Context, params postProcessParams) error {
 	}
 	coords := params.coords()
 
-	if params.UseGoPostprocessor {
+	if params.useGoPostprocessor {
 		yamlPath := filepath.Join(params.outDir, "postprocess.yaml")
 		if _, err := os.Stat(yamlPath); err == nil {
 			keepSet := make(map[string]bool)

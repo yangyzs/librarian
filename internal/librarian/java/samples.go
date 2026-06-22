@@ -25,7 +25,7 @@ import (
 	"strings"
 	"unicode"
 
-	"gopkg.in/yaml.v3"
+	"github.com/googleapis/librarian/internal/yaml"
 )
 
 var (
@@ -110,28 +110,37 @@ func ExtractSamples(dir string) ([]map[string]interface{}, error) {
 		}
 
 		contentBytes, err := os.ReadFile(file)
-		if err == nil {
-			if match := reMetadataBlock.FindString(string(contentBytes)); match != "" {
-				cleaned := reCommentPrefix.ReplaceAllString(match, "")
-				var meta map[string]map[string]interface{}
-				if err := yaml.Unmarshal([]byte(cleaned), &meta); err == nil {
-					if sm, ok := meta["sample-metadata"]; ok {
-						for k, v := range sm {
-							item[k] = v
-							if len(k) > 0 {
-								upperKey := strings.ToUpper(k[:1]) + k[1:]
-								item[upperKey] = v
-							}
-						}
-						if t, ok := sm["title"].(string); ok && strings.TrimSpace(t) != "" {
-							item["Title"] = t
-							item["title"] = t
-						}
-					}
-				}
+		if err != nil {
+			samples = append(samples, item)
+			continue
+		}
+		match := reMetadataBlock.FindString(string(contentBytes))
+		if match == "" {
+			samples = append(samples, item)
+			continue
+		}
+		cleaned := reCommentPrefix.ReplaceAllString(match, "")
+		meta, err := yaml.Unmarshal[map[string]map[string]interface{}]([]byte(cleaned))
+		if err != nil {
+			samples = append(samples, item)
+			continue
+		}
+		sm, ok := (*meta)["sample-metadata"]
+		if !ok {
+			samples = append(samples, item)
+			continue
+		}
+		for k, v := range sm {
+			item[k] = v
+			if len(k) > 0 {
+				upperKey := strings.ToUpper(k[:1]) + k[1:]
+				item[upperKey] = v
 			}
 		}
-
+		if t, ok := sm["title"].(string); ok && strings.TrimSpace(t) != "" {
+			item["Title"] = t
+			item["title"] = t
+		}
 		samples = append(samples, item)
 	}
 	return samples, nil

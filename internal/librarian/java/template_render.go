@@ -20,12 +20,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"text/template"
 
+	"github.com/googleapis/librarian/internal/yaml"
 	"github.com/iancoleman/strcase"
-	"gopkg.in/yaml.v3"
 )
 
 //go:embed template/README.md.go.tmpl
@@ -35,12 +34,31 @@ func isNilOrEmpty(v interface{}) bool {
 	if v == nil {
 		return true
 	}
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Slice, reflect.Map, reflect.Array, reflect.String:
-		return rv.Len() == 0
+	switch val := v.(type) {
+	case string:
+		return val == ""
+	case []interface{}:
+		return len(val) == 0
+	case []map[string]interface{}:
+		return len(val) == 0
+	case map[string]interface{}:
+		return len(val) == 0
+	case map[string]string:
+		return len(val) == 0
 	}
 	return false
+}
+
+// getMetadataField attempts to retrieve a field from the top level of metadata,
+// falling back to the nested "repo" map if it exists.
+func getMetadataField(metadata map[string]interface{}, key string) interface{} {
+	if val, ok := metadata[key]; ok && val != nil {
+		return val
+	}
+	if repo, ok := metadata["repo"].(map[string]interface{}); ok {
+		return repo[key]
+	}
+	return nil
 }
 
 // RenderREADME renders the README.md file using the template and metadata.
@@ -65,15 +83,17 @@ func RenderREADME(dir, bomVersion, libraryVersion string) error {
 	}
 
 	// Read partials if exist
-	partials := make(map[string]interface{})
+	var partials map[string]interface{}
 	if _, err := os.Stat(partialsPath); err == nil {
 		partialsBytes, err := os.ReadFile(partialsPath)
 		if err != nil {
 			return fmt.Errorf("failed to read partials: %w", err)
 		}
-		if err := yaml.Unmarshal(partialsBytes, &partials); err != nil {
+		p, err := yaml.Unmarshal[map[string]interface{}](partialsBytes)
+		if err != nil {
 			return fmt.Errorf("failed to unmarshal partials: %w", err)
 		}
+		partials = *p
 	}
 
 	// Capitalize keys of partials for template
@@ -116,38 +136,15 @@ func RenderREADME(dir, bomVersion, libraryVersion string) error {
 		version = libraryVersion
 	}
 
-	// Construct the nested Metadata object for the template
-	templateRepo := map[string]interface{}{
-		"NamePretty":           metadata["name_pretty"],
-		"DistributionName":     metadata["distribution_name"],
-		"Repo":                 metadata["repo"],
-		"APIShortname":         metadata["api_shortname"],
-		"APIDescription":       metadata["api_description"],
-		"ClientDocumentation":  metadata["client_documentation"],
-		"ProductDocumentation": metadata["product_documentation"],
-		"ReleaseLevel":         metadata["release_level"],
-		"Transport":            metadata["transport"],
-		"RequiresBilling":      metadata["requires_billing"],
-		"APIID":                metadata["api_id"],
-		"RepoShort":            metadata["repo_short"],
+	// Construct the nested Metadata object for the template using our helper
+	fields := []string{
+		"name_pretty", "distribution_name", "repo", "api_shortname",
+		"api_description", "client_documentation", "product_documentation",
+		"release_level", "transport", "requires_billing", "api_id", "repo_short",
 	}
-
-	// If flat structure failed, try to get from nested repo
-	if templateRepo["NamePretty"] == nil {
-		if repo, ok := metadata["repo"].(map[string]interface{}); ok {
-			templateRepo["NamePretty"] = repo["name_pretty"]
-			templateRepo["DistributionName"] = repo["distribution_name"]
-			templateRepo["Repo"] = repo["repo"]
-			templateRepo["APIShortname"] = repo["api_shortname"]
-			templateRepo["APIDescription"] = repo["api_description"]
-			templateRepo["ClientDocumentation"] = repo["client_documentation"]
-			templateRepo["ProductDocumentation"] = repo["product_documentation"]
-			templateRepo["ReleaseLevel"] = repo["release_level"]
-			templateRepo["Transport"] = repo["transport"]
-			templateRepo["RequiresBilling"] = repo["requires_billing"]
-			templateRepo["APIID"] = repo["api_id"]
-			templateRepo["RepoShort"] = repo["repo_short"]
-		}
+	templateRepo := make(map[string]interface{})
+	for _, f := range fields {
+		templateRepo[strcase.ToCamel(f)] = getMetadataField(metadata, f)
 	}
 
 	minJavaVersion, _ := metadata["min_java_version"].(string)

@@ -1177,7 +1177,7 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		}
 		p := libraryPostProcessParams{
 			outDir:             outDir,
-			UseGoPostprocessor: true,
+			useGoPostprocessor: true,
 			cfg: &config.Config{
 				Libraries: []*config.Library{
 					{Name: "google-cloud-java", Version: "1.2.3"},
@@ -1219,7 +1219,7 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 
 		p := libraryPostProcessParams{
 			outDir:             outDir,
-			UseGoPostprocessor: true,
+			useGoPostprocessor: true,
 			metadata: &repoMetadata{
 				NamePretty: "test-library",
 			},

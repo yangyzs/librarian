@@ -15,7 +15,6 @@
 package java
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,9 +25,6 @@ import (
 	"github.com/googleapis/librarian/internal/yaml"
 	"github.com/iancoleman/strcase"
 )
-
-//go:embed template/README.md.go.tmpl
-var readmeTemplate string
 
 func isNilOrEmpty(v interface{}) bool {
 	if v == nil {
@@ -210,8 +206,14 @@ func RenderREADME(dir, bomVersion, libraryVersion string) error {
 		LibraryVersion:    libraryVersion,
 	}
 
-	// Parse template
-	tmpl, err := template.New("README").Parse(readmeTemplate)
+	// Read and parse template from disk
+	templatePath := filepath.Join(dir, "template", "README.md.go.tmpl")
+	tmplBytes, err := os.ReadFile(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to read template from %s: %w", templatePath, err)
+	}
+
+	tmpl, err := template.New("README").Parse(string(tmplBytes))
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}

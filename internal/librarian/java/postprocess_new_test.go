@@ -81,11 +81,14 @@ method_operations:
 		t.Fatal(err)
 	}
 
-	oldTemplate := readmeTemplate
-	readmeTemplate = `# {{ .Metadata.Repo.NamePretty }}`
-	defer func() {
-		readmeTemplate = oldTemplate
-	}()
+	// Write mock template to disk
+	tmplDir := filepath.Join(tmpDir, "template")
+	if err := os.MkdirAll(tmplDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmplDir, "README.md.go.tmpl"), []byte(`# {{ .Metadata.Repo.NamePretty }}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	p := libraryPostProcessParams{
 		outDir: tmpDir,

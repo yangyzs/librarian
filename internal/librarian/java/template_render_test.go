@@ -34,11 +34,14 @@ LibraryVersion: {{ .LibraryVersion }}
 About: {{ .Metadata.Partials.About }}
 {{ end }}
 `
-	oldTemplate := readmeTemplate
-	readmeTemplate = templateContent
-	defer func() {
-		readmeTemplate = oldTemplate
-	}()
+	// Write mock template to disk
+	tmplDir := filepath.Join(tmpDir, "template")
+	if err := os.MkdirAll(tmplDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmplDir, "README.md.go.tmpl"), []byte(templateContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create dummy metadata
 	metadataPath := filepath.Join(tmpDir, ".repo-metadata.json")
@@ -109,7 +112,11 @@ About: This is a great API.
 }
 
 func TestRealTemplateParses(t *testing.T) {
-	_, err := template.New("README").Parse(readmeTemplate)
+	tmplBytes, err := os.ReadFile("template/README.md.go.tmpl")
+	if err != nil {
+		t.Fatalf("failed to read real template: %v", err)
+	}
+	_, err = template.New("README").Parse(string(tmplBytes))
 	if err != nil {
 		t.Fatalf("failed to parse real template: %v", err)
 	}

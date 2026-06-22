@@ -134,7 +134,7 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 		return fmt.Errorf("cfg.Default.Java is nil")
 	}
 
-	bomVersion, err := findBOMVersion(p.cfg)
+	bomVersion, err := findBOMVersion(p.cfg, p.library)
 	if err != nil {
 		return fmt.Errorf("failed to find BOM version: %w", err)
 	}

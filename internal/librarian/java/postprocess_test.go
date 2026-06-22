@@ -1225,7 +1225,7 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 			},
 			cfg: &config.Config{
 				Default: &config.Default{
-					Java: &config.JavaModule{
+					Java: &config.JavaDefault{
 						LibrariesBOMVersion: "1.0.0",
 					},
 				},

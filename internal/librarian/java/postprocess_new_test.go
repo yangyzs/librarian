@@ -91,7 +91,7 @@ method_operations:
 		outDir: tmpDir,
 		cfg: &config.Config{
 			Default: &config.Default{
-				Java: &config.JavaModule{
+				Java: &config.JavaDefault{
 					LibrariesBOMVersion: "1.0.0",
 				},
 			},

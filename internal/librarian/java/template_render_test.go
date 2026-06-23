@@ -43,23 +43,14 @@ About: {{ .Metadata.Partials.About }}
 		t.Fatal(err)
 	}
 
-	// Create dummy metadata
-	metadataPath := filepath.Join(tmpDir, ".repo-metadata.json")
-	metadataContent := `{
-  "repo": {
-    "name_pretty": "My API",
-    "distribution_name": "com.google.cloud:google-cloud-myapi",
-    "repo": "googleapis/google-cloud-java"
-  },
-  "library_version": "1.2.3"
-}`
-	err := os.WriteFile(metadataPath, []byte(metadataContent), 0644)
-	if err != nil {
-		t.Fatal(err)
+	metadata := &repoMetadata{
+		NamePretty:       "My API",
+		DistributionName: "com.google.cloud:google-cloud-myapi",
+		Repo:             "googleapis/google-cloud-java",
 	}
 
 	// Test case 1: Without partials
-	err = RenderREADME(tmpDir, "1.0.0-BOM", "1.2.3-LIB")
+	err := RenderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +63,7 @@ About: {{ .Metadata.Partials.About }}
 
 	expected := `# Google My API Client for Java
 Artifact: com.google.cloud:google-cloud-myapi
-Version: 1.2.3
+Version: 1.2.3-LIB
 BOMVersion: 1.0.0-BOM
 LibraryVersion: 1.2.3-LIB
 `
@@ -88,7 +79,7 @@ LibraryVersion: 1.2.3-LIB
 		t.Fatal(err)
 	}
 
-	err = RenderREADME(tmpDir, "1.0.0-BOM", "1.2.3-LIB")
+	err = RenderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +91,7 @@ LibraryVersion: 1.2.3-LIB
 
 	expectedWithPartials := `# Google My API Client for Java
 Artifact: com.google.cloud:google-cloud-myapi
-Version: 1.2.3
+Version: 1.2.3-LIB
 BOMVersion: 1.0.0-BOM
 LibraryVersion: 1.2.3-LIB
 

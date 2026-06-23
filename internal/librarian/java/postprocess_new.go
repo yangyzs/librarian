@@ -139,7 +139,7 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 		return fmt.Errorf("failed to find BOM version: %w", err)
 	}
 
-	if err := RenderREADME(p.outDir, bomVersion, libraryVersion); err != nil {
+	if err := RenderREADME(p.outDir, p.metadata, bomVersion, libraryVersion); err != nil {
 		return fmt.Errorf("failed to render README: %w", err)
 	}
 

@@ -68,19 +68,6 @@ method_operations:
 		t.Fatal(err)
 	}
 
-	// Setup .repo-metadata.json
-	metadata := `{
-  "repo": {
-    "name_pretty": "My API",
-    "distribution_name": "com.google.cloud:google-cloud-myapi",
-    "repo": "googleapis/google-cloud-java"
-  },
-  "library_version": "1.2.3"
-}`
-	if err := os.WriteFile(filepath.Join(tmpDir, ".repo-metadata.json"), []byte(metadata), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	// Write mock template to disk
 	tmplDir := filepath.Join(tmpDir, "template")
 	if err := os.MkdirAll(tmplDir, 0755); err != nil {
@@ -101,6 +88,11 @@ method_operations:
 		},
 		library: &config.Library{
 			Version: "1.2.3",
+		},
+		metadata: &repoMetadata{
+			NamePretty:       "My API",
+			DistributionName: "com.google.cloud:google-cloud-myapi",
+			Repo:             "googleapis/google-cloud-java",
 		},
 	}
 

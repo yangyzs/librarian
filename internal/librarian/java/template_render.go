@@ -15,7 +15,6 @@
 package java
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,57 +25,14 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
-func isNilOrEmpty(v interface{}) bool {
-	if v == nil {
-		return true
-	}
-	switch val := v.(type) {
-	case string:
-		return val == ""
-	case []interface{}:
-		return len(val) == 0
-	case []map[string]interface{}:
-		return len(val) == 0
-	case map[string]interface{}:
-		return len(val) == 0
-	case map[string]string:
-		return len(val) == 0
-	}
-	return false
-}
-
-// getMetadataField attempts to retrieve a field from the top level of metadata,
-// falling back to the nested "repo" map if it exists.
-func getMetadataField(metadata map[string]interface{}, key string) interface{} {
-	if val, ok := metadata[key]; ok && val != nil {
-		return val
-	}
-	if repo, ok := metadata["repo"].(map[string]interface{}); ok {
-		return repo[key]
-	}
-	return nil
-}
-
 // RenderREADME renders the README.md file using the template and metadata.
-// dir is the directory containing .repo-metadata.json and where README.md will be written.
-func RenderREADME(dir, bomVersion, libraryVersion string) error {
-	metadataPath := filepath.Join(dir, ".repo-metadata.json")
+// dir is the directory containing where README.md will be written.
+func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion string) error {
 	partialsPath := filepath.Join(dir, ".readme-partials.yaml")
 	if _, err := os.Stat(partialsPath); os.IsNotExist(err) {
 		partialsPath = filepath.Join(dir, ".readme-partials.yml")
 	}
 	outputPath := filepath.Join(dir, "README.md")
-
-	// Read metadata
-	metadataBytes, err := os.ReadFile(metadataPath)
-	if err != nil {
-		return fmt.Errorf("failed to read metadata: %w", err)
-	}
-
-	var metadata map[string]interface{}
-	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
-		return fmt.Errorf("failed to unmarshal metadata: %w", err)
-	}
 
 	// Read partials if exist
 	var partials map[string]interface{}
@@ -99,12 +55,7 @@ func RenderREADME(dir, bomVersion, libraryVersion string) error {
 	}
 
 	// Prepare data for template
-	distName, _ := metadata["distribution_name"].(string)
-	if distName == "" {
-		if repo, ok := metadata["repo"].(map[string]interface{}); ok {
-			distName, _ = repo["distribution_name"].(string)
-		}
-	}
+	distName := metadata.DistributionName
 	distParts := strings.Split(distName, ":")
 	groupID := ""
 	artifactID := ""
@@ -115,64 +66,33 @@ func RenderREADME(dir, bomVersion, libraryVersion string) error {
 		artifactID = distParts[1]
 	}
 
-	repoName, _ := metadata["repo"].(string)
-	if repoName == "" {
-		if repo, ok := metadata["repo"].(map[string]interface{}); ok {
-			repoName, _ = repo["repo"].(string)
-		}
-	}
+	repoName := metadata.Repo
 	repoParts := strings.Split(repoName, "/")
 	repoShort := ""
 	if len(repoParts) > 0 {
 		repoShort = repoParts[len(repoParts)-1]
 	}
 
-	version, _ := metadata["library_version"].(string)
-	if version == "" {
-		version = libraryVersion
-	}
+	version := libraryVersion
 
-	// Construct the nested Metadata object for the template using our helper
-	fields := []string{
-		"name_pretty", "distribution_name", "repo", "api_shortname",
-		"api_description", "client_documentation", "product_documentation",
-		"release_level", "transport", "requires_billing", "api_id", "repo_short",
-	}
-	templateRepo := make(map[string]interface{})
-	for _, f := range fields {
-		templateRepo[strcase.ToCamel(f)] = getMetadataField(metadata, f)
-	}
-
-	minJavaVersion, _ := metadata["min_java_version"].(string)
-	if minJavaVersion == "" {
-		minJavaVersion = "8" // Default to Java 8
+	minJavaVersion := metadata.MinJavaVersion
+	if minJavaVersion == 0 {
+		minJavaVersion = 8 // Default to Java 8
 	}
 	fmt.Println("DEBUG minJavaVersion:", minJavaVersion)
 
-	samples := metadata["samples"]
-	if isNilOrEmpty(samples) {
-		extSamples, err := ExtractSamples(dir)
-		if err != nil {
-			return fmt.Errorf("failed to extract samples: %w", err)
-		}
-		if len(extSamples) > 0 {
-			samples = extSamples
-		}
+	samples, err := ExtractSamples(dir)
+	if err != nil {
+		return fmt.Errorf("failed to extract samples: %w", err)
 	}
 
-	snippets := metadata["snippets"]
-	if isNilOrEmpty(snippets) {
-		extSnippets, err := ExtractSnippets(dir)
-		if err != nil {
-			return fmt.Errorf("failed to extract snippets: %w", err)
-		}
-		if len(extSnippets) > 0 {
-			snippets = extSnippets
-		}
+	snippets, err := ExtractSnippets(dir)
+	if err != nil {
+		return fmt.Errorf("failed to extract snippets: %w", err)
 	}
 
 	templateMetadata := map[string]interface{}{
-		"Repo":                templateRepo,
+		"Repo":                metadata,
 		"LibraryVersion":      version,
 		"LibrariesBOMVersion": bomVersion,
 		"Samples":             samples,

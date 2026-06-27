@@ -1170,29 +1170,52 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		}
 	})
 
-	t.Run("UseGoPostprocessor true, no yaml", func(t *testing.T) {
+	t.Run("UseGoPostprocessor true, no yaml, success", func(t *testing.T) {
 		outDir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(outDir, "owlbot.py"), []byte(""), 0755); err != nil {
+		t.Chdir(outDir)
+
+		if err := os.MkdirAll(filepath.Join(outDir, "owl-bot-staging"), 0755); err != nil {
 			t.Fatal(err)
 		}
+		metadata := `{"repo": {"name_pretty": "My API"}}`
+		if err := os.WriteFile(filepath.Join(outDir, ".repo-metadata.json"), []byte(metadata), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(outDir, "template"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "template", "README.md.go.tmpl"), []byte("dummy"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
 		p := libraryPostProcessParams{
 			outDir:             outDir,
 			useGoPostprocessor: true,
+			metadata: &repoMetadata{
+				NamePretty: "test-library",
+			},
 			cfg: &config.Config{
+				Default: &config.Default{
+					Java: &config.JavaDefault{
+						LibrariesBOMVersion: "1.0.0",
+					},
+				},
 				Libraries: []*config.Library{
 					{Name: "google-cloud-java", Version: "1.2.3"},
 				},
 			},
 			library: &config.Library{
-				Name: "test-library",
+				Name:    "test-library",
+				Version: "1.2.3",
+				Java: &config.JavaModule{
+					GroupID:    "com.google.cloud",
+					ArtifactID: "test-library",
+				},
 			},
 		}
 		err := postProcessLibrary(t.Context(), p)
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if strings.Contains(err.Error(), "postProcessLibraryNew not implemented") {
-			t.Errorf("expected legacy flow, but got new flow error: %v", err)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
 		}
 	})
 

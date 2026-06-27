@@ -71,21 +71,18 @@ type libraryPostProcessParams struct {
 
 func postProcessLibrary(ctx context.Context, params libraryPostProcessParams) error {
 	if params.useGoPostprocessor {
-		yamlPath := filepath.Join(params.outDir, "postprocess.yaml")
-		if _, err := os.Stat(yamlPath); err == nil {
-			if err := postProcessLibraryNew(ctx, params); err != nil {
-				return err
-			}
-
-			monorepoVersion, err := findMonorepoVersion(params.cfg)
-			if err != nil {
-				return err
-			}
-			if err := syncPOMs(params.library, params.outDir, monorepoVersion, params.metadata, params.transports); err != nil {
-				return fmt.Errorf("%w: %w", errSyncPOMs, err)
-			}
-			return nil
+		if err := postProcessLibraryNew(ctx, params); err != nil {
+			return err
 		}
+
+		monorepoVersion, err := findMonorepoVersion(params.cfg)
+		if err != nil {
+			return err
+		}
+		if err := syncPOMs(params.library, params.outDir, monorepoVersion, params.metadata, params.transports); err != nil {
+			return fmt.Errorf("%w: %w", errSyncPOMs, err)
+		}
+		return nil
 	}
 	if err := createOrVerifyOwlbotPy(params.outDir); err != nil {
 		return err

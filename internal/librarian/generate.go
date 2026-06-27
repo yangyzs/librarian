@@ -74,13 +74,14 @@ latest API definitions is:
 				Usage: "generate all libraries",
 			},
 			&cli.BoolFlag{
-				Name:  "use-go-postprocessor",
-				Usage: "use the new Go postprocessor for Java libraries",
+				Name:    "go-postprocessor",
+				Aliases: []string{"go-post"},
+				Usage:   "use the new Go postprocessor for Java libraries",
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			all := cmd.Bool("all")
-			useGoPostprocessor := cmd.Bool("use-go-postprocessor")
+			useGoPostprocessor := cmd.Bool("go-postprocessor")
 			libraryName := cmd.Args().First()
 			if !all && libraryName == "" {
 				return errMissingLibraryOrAllFlag

@@ -16,6 +16,8 @@ package java
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -23,76 +25,21 @@ import (
 
 func TestDecamelize(t *testing.T) {
 	for _, test := range []struct {
-		name  string
-		input string
-		want  string
+		input    string
+		expected string
 	}{
-		{
-			name:  "camel case",
-			input: "CamelCase",
-			want:  "Camel Case",
-		},
-		{
-			name:  "simple word",
-			input: "Word",
-			want:  "Word",
-		},
-		{
-			name:  "already separated",
-			input: "Camel Case",
-			want:  "Camel Case",
-		},
-		{
-			name:  "java acronym IamPolicy",
-			input: "IamPolicy",
-			want:  "Iam Policy",
-		},
-		{
-			name:  "java acronym GcsBucket",
-			input: "GcsBucket",
-			want:  "Gcs Bucket",
-		},
+		{"requesterPays", "Requester Pays"},
+		{"ACLBatman", "ACL Batman"},
+		{"NativeImageLoggingSample", "Native Image Logging Sample"},
+		{"simpleTest", "Simple Test"},
+		{"", ""},
+		{"IamPolicy", "Iam Policy"},
+		{"GcsBucket", "Gcs Bucket"},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			got := decamelize(test.input)
-			if diff := cmp.Diff(test.want, got); diff != "" {
-				t.Errorf("mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-func TestIsProductionSample(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		path string
-		want bool
-	}{
-		{
-			name: "valid production sample",
-			path: "samples/src/main/java/com/example/Sample.java",
-			want: true,
-		},
-		{
-			name: "valid production sample at root",
-			path: "src/main/java/com/example/Sample.java",
-			want: true,
-		},
-		{
-			name: "non-java file",
-			path: "samples/src/main/java/README.md",
-			want: false,
-		},
-		{
-			name: "not in src/main/java",
-			path: "samples/src/test/java/com/example/Sample.java",
-			want: false,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			got := isProductionSample(test.path)
-			if got != test.want {
-				t.Errorf("isProductionSample() = %t, want %t", got, test.want)
+		t.Run(test.input, func(t *testing.T) {
+			actual := decamelize(test.input)
+			if actual != test.expected {
+				t.Errorf("decamelize(%q) = %q; expected %q", test.input, actual, test.expected)
 			}
 		})
 	}
@@ -177,5 +124,163 @@ func TestExtractTitle_Error(t *testing.T) {
 				t.Errorf("extractTitle() error = %v, wantErr %v", gotErr, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestIsProductionSample(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+		want bool
+	}{
+		{
+			name: "valid production sample",
+			path: "samples/src/main/java/com/example/Sample.java",
+			want: true,
+		},
+		{
+			name: "valid production sample at root",
+			path: "src/main/java/com/example/Sample.java",
+			want: true,
+		},
+		{
+			name: "non-java file",
+			path: "samples/src/main/java/README.md",
+			want: false,
+		},
+		{
+			name: "not in src/main/java",
+			path: "samples/src/test/java/com/example/Sample.java",
+			want: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := isProductionSample(test.path)
+			if got != test.want {
+				t.Errorf("isProductionSample() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestExtractSamples_MissingDir(t *testing.T) {
+	tempDir := t.TempDir()
+	samples, err := ExtractSamples(tempDir)
+	if err != nil {
+		t.Fatalf("ExtractSamples returned error for missing dir: %v", err)
+	}
+	if samples != nil {
+		t.Errorf("Expected nil samples for missing dir, got %v", samples)
+	}
+}
+
+func TestExtractSamples_Success(t *testing.T) {
+	tempDir := t.TempDir()
+	samplesDir := filepath.Join(tempDir, "samples", "src", "main", "java")
+	if err := os.MkdirAll(samplesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	file1 := filepath.Join(samplesDir, "RequesterPays.java")
+	content1 := `// sample-metadata:
+//   title: Custom Title Override
+//   description: A custom demo sample
+public class RequesterPays {}`
+	if err := os.WriteFile(file1, []byte(content1), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	file2 := filepath.Join(samplesDir, "demoSample.java")
+	content2 := `public class demoSample {}`
+	if err := os.WriteFile(file2, []byte(content2), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	samples, err := ExtractSamples(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []map[string]interface{}{
+		{
+			"Title":       "Custom Title Override",
+			"title":       "Custom Title Override",
+			"description": "A custom demo sample",
+			"Description": "A custom demo sample",
+			"File":        "samples/src/main/java/RequesterPays.java",
+			"file":        "samples/src/main/java/RequesterPays.java",
+		},
+		{
+			"Title": "Demo Sample",
+			"title": "Demo Sample",
+			"File":  "samples/src/main/java/demoSample.java",
+			"file":  "samples/src/main/java/demoSample.java",
+		},
+	}
+
+	if diff := cmp.Diff(want, samples); diff != "" {
+		t.Errorf("ExtractSamples() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestExtractSnippets(t *testing.T) {
+	tempDir := t.TempDir()
+	samplesDir := filepath.Join(tempDir, "samples")
+	if err := os.MkdirAll(samplesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	pomPath := filepath.Join(samplesDir, "pom.xml")
+	pomContent := `<project>
+  <!-- [START dependency_snippet] -->
+  <dependency>
+    <groupId>com.google.cloud</groupId>
+  </dependency>
+  <!-- [END dependency_snippet] -->
+</project>`
+	if err := os.WriteFile(pomPath, []byte(pomContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	javaPath := filepath.Join(samplesDir, "Demo.java")
+	javaContent := `public class Demo {
+  // [START quickstart]
+  public void run() {
+    // [START_EXCLUDE]
+    System.out.println("hidden");
+    // [END_EXCLUDE]
+    System.out.println("visible");
+  }
+  // [END quickstart]
+}`
+	if err := os.WriteFile(javaPath, []byte(javaContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	snippets, err := ExtractSnippets(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(snippets) != 2 {
+		t.Fatalf("Expected 2 snippets, got %d", len(snippets))
+	}
+
+	depSnippet := snippets["dependency_snippet"]
+	expectedDep := `<dependency>
+  <groupId>com.google.cloud</groupId>
+</dependency>
+`
+	if depSnippet != expectedDep {
+		t.Errorf("dependency_snippet = %q; expected %q", depSnippet, expectedDep)
+	}
+
+	quickSnippet := snippets["quickstart"]
+	expectedQuick := `public void run() {
+  System.out.println("visible");
+}
+`
+	if quickSnippet != expectedQuick {
+		t.Errorf("quickstart = %q; expected %q", quickSnippet, expectedQuick)
 	}
 }

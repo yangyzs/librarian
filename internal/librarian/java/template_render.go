@@ -15,6 +15,8 @@
 package java
 
 import (
+	"embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,6 +26,9 @@ import (
 	"github.com/googleapis/librarian/internal/yaml"
 	"github.com/iancoleman/strcase"
 )
+
+//go:embed template/README.md.go.tmpl
+var defaultTemplateFS embed.FS
 
 // RenderREADME renders the README.md file using the template and metadata.
 // dir is the directory containing where README.md will be written.
@@ -130,7 +135,13 @@ func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion
 	templatePath := filepath.Join(dir, "template", "README.md.go.tmpl")
 	tmplBytes, err := os.ReadFile(templatePath)
 	if err != nil {
-		return fmt.Errorf("failed to read template from %s: %w", templatePath, err)
+		if errors.Is(err, os.ErrNotExist) {
+			// Fallback to embedded default template
+			tmplBytes, err = defaultTemplateFS.ReadFile("template/README.md.go.tmpl")
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read template: %w", err)
+		}
 	}
 
 	tmpl, err := template.New("README").Parse(string(tmplBytes))

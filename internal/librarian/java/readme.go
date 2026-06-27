@@ -25,8 +25,6 @@ import (
 	"sort"
 	"strings"
 	"unicode"
-
-	"github.com/googleapis/librarian/internal/yaml"
 )
 
 var (
@@ -34,9 +32,6 @@ var (
 	closeSnippetRegex = regexp.MustCompile(`\[END ([a-zA-Z0-9_-]+)\]`)
 	openExcludeRegex  = regexp.MustCompile(`\[START_EXCLUDE\]`)
 	closeExcludeRegex = regexp.MustCompile(`\[END_EXCLUDE\]`)
-
-	reMetadataBlock = regexp.MustCompile(`(?m)^[ \t]*//[ \t]*sample-metadata:([^\n]+|\n[ \t]*//)+`)
-	reCommentPrefix = regexp.MustCompile(`(?m)^[ \t]*(?:#|//)[ \t]?`)
 
 	reDecamelize1 = regexp.MustCompile(`([A-Z]+)([A-Z])([a-z0-9])`)
 	reDecamelize2 = regexp.MustCompile(`([a-z0-9])([A-Z])`)
@@ -92,12 +87,17 @@ func extractTitle(content string) (string, error) {
 	return title, nil
 }
 
+// Sample represents a Java code sample and its metadata for README generation.
+type Sample struct {
+	Title string
+	File  string
+}
+
 // ExtractSamples walks the "samples" directory locating all .java source files.
-// It parses embedded multiline "// sample-metadata:" YAML blocks to derive title and path metadata.
-func ExtractSamples(dir string) ([]map[string]interface{}, error) {
+// It extracts title overrides from source file comments using extractTitle.
+func ExtractSamples(dir string) ([]Sample, error) {
 	samplesDir := filepath.Join(dir, "samples")
 	var files []string
-
 	err := filepath.WalkDir(samplesDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
@@ -105,17 +105,15 @@ func ExtractSamples(dir string) ([]map[string]interface{}, error) {
 			}
 			return err
 		}
-		if d.IsDir() {
-			if d.Name() == "test" {
-				return filepath.SkipDir
-			}
-			if d.Name() == "generated" && filepath.Base(filepath.Dir(path)) == "snippets" {
-				return filepath.SkipDir
-			}
+		if !d.Type().IsRegular() {
 			return nil
 		}
-		if d.Type().IsRegular() && isProductionSample(path) {
-			files = append(files, path)
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		if isProductionSample(rel) {
+			files = append(files, rel)
 		}
 		return nil
 	})
@@ -123,59 +121,28 @@ func ExtractSamples(dir string) ([]map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to walk samples directory: %w", err)
 	}
 
-	if len(files) == 0 {
-		return nil, nil
-	}
-
-	sort.Strings(files)
-	var samples []map[string]interface{}
-
+	var samples []Sample
 	for _, file := range files {
-		rel, err := filepath.Rel(dir, file)
-		if err != nil {
-			continue
-		}
 		base := strings.TrimSuffix(filepath.Base(file), ".java")
 		title := decamelize(base)
+		slashPath := filepath.ToSlash(file)
 
-		slashPath := filepath.ToSlash(rel)
-		item := map[string]interface{}{
-			"Title": title,
-			"File":  slashPath,
-			"title": title,
-			"file":  slashPath,
-		}
-
-		contentBytes, err := os.ReadFile(file)
+		absPath := filepath.Join(dir, file)
+		contentBytes, err := os.ReadFile(absPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read sample file %s: %w", file, err)
 		}
-		matchBytes := reMetadataBlock.Find(contentBytes)
-		if matchBytes == nil {
-			samples = append(samples, item)
-			continue
-		}
-		cleanedBytes := reCommentPrefix.ReplaceAll(matchBytes, nil)
-		meta, err := yaml.Unmarshal[map[string]map[string]interface{}](cleanedBytes)
+		titleOverride, err := extractTitle(string(contentBytes))
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse YAML metadata in %s: %w", file, err)
+			return nil, fmt.Errorf("failed to extract title from %s: %w", file, err)
 		}
-		sm, ok := (*meta)["sample-metadata"]
-		if !ok {
-			return nil, fmt.Errorf("missing 'sample-metadata' key in YAML of %s", file)
+		if titleOverride != "" {
+			title = titleOverride
 		}
-		for k, v := range sm {
-			item[k] = v
-			if len(k) > 0 {
-				upperKey := strings.ToUpper(k[:1]) + k[1:]
-				item[upperKey] = v
-			}
-		}
-		if t, ok := sm["title"].(string); ok && strings.TrimSpace(t) != "" {
-			item["Title"] = t
-			item["title"] = t
-		}
-		samples = append(samples, item)
+		samples = append(samples, Sample{
+			Title: title,
+			File:  slashPath,
+		})
 	}
 	return samples, nil
 }

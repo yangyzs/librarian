@@ -163,63 +163,109 @@ func TestIsProductionSample(t *testing.T) {
 	}
 }
 
-func TestExtractSamples_MissingDir(t *testing.T) {
-	tempDir := t.TempDir()
-	samples, err := ExtractSamples(tempDir)
-	if err != nil {
-		t.Fatalf("ExtractSamples returned error for missing dir: %v", err)
-	}
-	if samples != nil {
-		t.Errorf("Expected nil samples for missing dir, got %v", samples)
+func TestExtractSamples(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		setupFiles func(t *testing.T, dir string)
+		want       []Sample
+	}{
+		{
+			name: "missing samples directory",
+			setupFiles: func(t *testing.T, dir string) {
+				// Do nothing, tempDir is empty.
+			},
+			want: nil,
+		},
+		{
+			name: "extract successfully",
+			setupFiles: func(t *testing.T, dir string) {
+				samplesDir := filepath.Join(dir, "samples", "src", "main", "java")
+				if err := os.MkdirAll(samplesDir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				file1 := filepath.Join(samplesDir, "RequesterPays.java")
+				content1 := `// sample-metadata:
+//   title: Custom Title Override
+public class RequesterPays {}`
+				if err := os.WriteFile(file1, []byte(content1), 0644); err != nil {
+					t.Fatal(err)
+				}
+				file2 := filepath.Join(samplesDir, "demoSample.java")
+				content2 := `public class demoSample {}`
+				if err := os.WriteFile(file2, []byte(content2), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: []Sample{
+				{
+					Title: "Custom Title Override",
+					File:  "samples/src/main/java/RequesterPays.java",
+				},
+				{
+					Title: "Demo Sample",
+					File:  "samples/src/main/java/demoSample.java",
+				},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			test.setupFiles(t, tempDir)
+
+			samples, err := ExtractSamples(tempDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(test.want, samples); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
-func TestExtractSamples_Success(t *testing.T) {
-	tempDir := t.TempDir()
-	samplesDir := filepath.Join(tempDir, "samples", "src", "main", "java")
-	if err := os.MkdirAll(samplesDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	file1 := filepath.Join(samplesDir, "RequesterPays.java")
-	content1 := `// sample-metadata:
-//   title: Custom Title Override
-//   description: A custom demo sample
-public class RequesterPays {}`
-	if err := os.WriteFile(file1, []byte(content1), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	file2 := filepath.Join(samplesDir, "demoSample.java")
-	content2 := `public class demoSample {}`
-	if err := os.WriteFile(file2, []byte(content2), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	samples, err := ExtractSamples(tempDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := []map[string]interface{}{
+func TestExtractSamples_Error(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		wantErr error
+	}{
 		{
-			"Title":       "Custom Title Override",
-			"title":       "Custom Title Override",
-			"description": "A custom demo sample",
-			"Description": "A custom demo sample",
-			"File":        "samples/src/main/java/RequesterPays.java",
-			"file":        "samples/src/main/java/RequesterPays.java",
+			name: "error on empty title override",
+			content: `// sample-metadata:
+//   title: ""
+public class Invalid {}`,
+			wantErr: errEmptyTitle,
 		},
 		{
-			"Title": "Demo Sample",
-			"title": "Demo Sample",
-			"File":  "samples/src/main/java/demoSample.java",
-			"file":  "samples/src/main/java/demoSample.java",
+			name: "error on capitalized Title",
+			content: `// sample-metadata:
+//   Title: Capitalized Title
+public class Invalid {}`,
+			wantErr: errMissingTitle,
 		},
-	}
-
-	if diff := cmp.Diff(want, samples); diff != "" {
-		t.Errorf("ExtractSamples() mismatch (-want +got):\n%s", diff)
+		{
+			name: "error on missing title line immediately following sample-metadata",
+			content: `// sample-metadata:
+//   description: missing title line
+public class Invalid {}`,
+			wantErr: errMissingTitle,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			samplesDir := filepath.Join(tempDir, "samples", "src", "main", "java")
+			if err := os.MkdirAll(samplesDir, 0755); err != nil {
+				t.Fatal(err)
+			}
+			file := filepath.Join(samplesDir, "Sample.java")
+			if err := os.WriteFile(file, []byte(test.content), 0644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := ExtractSamples(tempDir)
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("ExtractSamples() err = %v, want %v", err, test.wantErr)
+			}
+		})
 	}
 }
 

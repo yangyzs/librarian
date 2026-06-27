@@ -25,8 +25,8 @@ import (
 	"github.com/googleapis/librarian/internal/filesystem"
 )
 
-// errTextNotFound is returned when the target text or pattern is not found in the file.
-var errTextNotFound = errors.New("text not found")
+// ErrTextNotFound is returned when the target text or pattern is not found in the file.
+var ErrTextNotFound = errors.New("text not found")
 
 // CopyFile copies a single file from the src path to the dst path.
 // It acts as a wrapper around filesystem.CopyFile to provide a unified
@@ -49,7 +49,7 @@ func Replace(path, original, replacement string) error {
 	}
 	oldBytes := []byte(original)
 	if !bytes.Contains(content, oldBytes) {
-		return fmt.Errorf("%w: %q in file %s", errTextNotFound, original, path)
+		return fmt.Errorf("%w: %q in file %s", ErrTextNotFound, original, path)
 	}
 	newContent := bytes.ReplaceAll(content, oldBytes, []byte(replacement))
 	return os.WriteFile(path, newContent, 0644)
@@ -71,7 +71,7 @@ func ReplaceRegex(path, pattern, replacement string) error {
 		return err
 	}
 	if !re.Match(content) {
-		return fmt.Errorf("%w: pattern %q in file %s", errTextNotFound, pattern, path)
+		return fmt.Errorf("%w: pattern %q in file %s", ErrTextNotFound, pattern, path)
 	}
 	newContent := re.ReplaceAll(content, []byte(replacement))
 	return os.WriteFile(path, newContent, 0644)

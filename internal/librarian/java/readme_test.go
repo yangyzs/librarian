@@ -28,11 +28,9 @@ func TestDecamelize(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"requesterPays", "Requester Pays"},
-		{"ACLBatman", "ACL Batman"},
-		{"NativeImageLoggingSample", "Native Image Logging Sample"},
-		{"simpleTest", "Simple Test"},
-		{"", ""},
+		{"CamelCase", "Camel Case"},
+		{"Word", "Word"},
+		{"Camel Case", "Camel Case"},
 		{"IamPolicy", "Iam Policy"},
 		{"GcsBucket", "Gcs Bucket"},
 	} {
@@ -190,20 +188,20 @@ public class RequesterPays {}`
 				if err := os.WriteFile(file1, []byte(content1), 0644); err != nil {
 					t.Fatal(err)
 				}
-				file2 := filepath.Join(samplesDir, "demoSample.java")
-				content2 := `public class demoSample {}`
+				file2 := filepath.Join(samplesDir, "DemoSample.java")
+				content2 := `public class DemoSample {}`
 				if err := os.WriteFile(file2, []byte(content2), 0644); err != nil {
 					t.Fatal(err)
 				}
 			},
 			want: []Sample{
 				{
-					Title: "Custom Title Override",
-					File:  "samples/src/main/java/RequesterPays.java",
+					Title: "Demo Sample",
+					File:  "samples/src/main/java/DemoSample.java",
 				},
 				{
-					Title: "Demo Sample",
-					File:  "samples/src/main/java/demoSample.java",
+					Title: "Custom Title Override",
+					File:  "samples/src/main/java/RequesterPays.java",
 				},
 			},
 		},

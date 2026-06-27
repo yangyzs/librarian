@@ -144,33 +144,30 @@ func postProcessAPI(ctx context.Context, params postProcessParams) error {
 	coords := params.coords()
 
 	if params.useGoPostprocessor {
-		yamlPath := filepath.Join(params.outDir, "postprocess.yaml")
-		if _, err := os.Stat(yamlPath); err == nil {
-			keepSet := make(map[string]bool)
-			for _, k := range params.library.Keep {
-				keepSet[strings.TrimSuffix(filepath.ToSlash(k), "/")] = true
-			}
-			if err := restructureModules(params, params.outDir, keepSet, params.outDir); err != nil {
-				return fmt.Errorf("failed to restructure direct to outDir: %w", err)
-			}
-
-			protoModuleRepoRoot := filepath.Join(params.outDir, coords.Proto.ArtifactID)
-			shouldGenerate, err := clirrIgnoreShouldGenerate(coords.Proto.ArtifactID, protoModuleRepoRoot, params.javaAPI.Monolithic)
-			if err != nil {
-				return fmt.Errorf("failed to check for clirr ignore file: %w", err)
-			}
-			if shouldGenerate {
-				if err := generateClirrIgnore(protoModuleRepoRoot); err != nil {
-					return fmt.Errorf("failed to generate clirr ignore file: %w", err)
-				}
-			}
-
-			// Cleanup intermediate protoc output directory
-			if err := os.RemoveAll(filepath.Join(params.outDir, params.apiBase)); err != nil {
-				return fmt.Errorf("failed to cleanup intermediate files: %w", err)
-			}
-			return nil
+		keepSet := make(map[string]bool)
+		for _, k := range params.library.Keep {
+			keepSet[strings.TrimSuffix(filepath.ToSlash(k), "/")] = true
 		}
+		if err := restructureModules(params, params.outDir, keepSet, params.outDir); err != nil {
+			return fmt.Errorf("failed to restructure direct to outDir: %w", err)
+		}
+
+		protoModuleRepoRoot := filepath.Join(params.outDir, coords.Proto.ArtifactID)
+		shouldGenerate, err := clirrIgnoreShouldGenerate(coords.Proto.ArtifactID, protoModuleRepoRoot, params.javaAPI.Monolithic)
+		if err != nil {
+			return fmt.Errorf("failed to check for clirr ignore file: %w", err)
+		}
+		if shouldGenerate {
+			if err := generateClirrIgnore(protoModuleRepoRoot); err != nil {
+				return fmt.Errorf("failed to generate clirr ignore file: %w", err)
+			}
+		}
+
+		// Cleanup intermediate protoc output directory
+		if err := os.RemoveAll(filepath.Join(params.outDir, params.apiBase)); err != nil {
+			return fmt.Errorf("failed to cleanup intermediate files: %w", err)
+		}
+		return nil
 	}
 
 	if err := restructureToStaging(params); err != nil {

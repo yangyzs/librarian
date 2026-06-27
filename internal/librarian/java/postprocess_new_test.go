@@ -45,29 +45,6 @@ public class File {
 		t.Fatal(err)
 	}
 
-	// Setup postprocess.yaml
-	postprocessYaml := `
-replace:
-  - path: "**/File.java"
-    original: "oldFunc"
-    replacement: "newFunc"
-method_operations:
-  - path: "**/File.java"
-    action: delete
-    func_name: "public void toDelete()"
-  - path: "**/File.java"
-    action: duplicate
-    func_name: "public void newFunc()"
-    new_name: "newFuncCopy"
-  - path: "**/File.java"
-    action: deprecate
-    func_name: "public void newFuncCopy()"
-    deprecation_message: "Use newFunc instead."
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "postprocess.yaml"), []byte(postprocessYaml), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	// Write mock template to disk
 	tmplDir := filepath.Join(tmpDir, "template")
 	if err := os.MkdirAll(tmplDir, 0755); err != nil {
@@ -88,6 +65,34 @@ method_operations:
 		},
 		library: &config.Library{
 			Version: "1.2.3",
+			Postprocess: &config.Postprocess{
+				Replace: []config.ReplaceConfig{
+					{
+						Path:        "**/File.java",
+						Original:    "oldFunc",
+						Replacement: "newFunc",
+					},
+				},
+				MethodOperations: []config.MethodOperation{
+					{
+						Path:     "**/File.java",
+						Action:   "delete",
+						FuncName: "public void toDelete()",
+					},
+					{
+						Path:     "**/File.java",
+						Action:   "duplicate",
+						FuncName: "public void newFunc()",
+						NewName:  "newFuncCopy",
+					},
+					{
+						Path:               "**/File.java",
+						Action:             "deprecate",
+						FuncName:           "public void newFuncCopy()",
+						DeprecationMessage: "Use newFunc instead.",
+					},
+				},
+			},
 		},
 		metadata: &repoMetadata{
 			NamePretty:       "My API",

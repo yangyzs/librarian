@@ -1219,13 +1219,10 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		}
 	})
 
-	t.Run("UseGoPostprocessor true, with yaml", func(t *testing.T) {
+	t.Run("UseGoPostprocessor true, with postprocess config in library", func(t *testing.T) {
 		outDir := t.TempDir()
 		t.Chdir(outDir)
 
-		if err := os.WriteFile(filepath.Join(outDir, "postprocess.yaml"), []byte(""), 0644); err != nil {
-			t.Fatal(err)
-		}
 		if err := os.MkdirAll(filepath.Join(outDir, "owl-bot-staging"), 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -1234,6 +1231,11 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := os.MkdirAll(filepath.Join(outDir, "template"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		// Write a file to apply replacements on
+		testFile := filepath.Join(outDir, "TestFile.java")
+		if err := os.WriteFile(testFile, []byte("Hello World"), 0644); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(outDir, "template", "README.md.go.tmpl"), []byte("dummy"), 0644); err != nil {
@@ -1259,6 +1261,15 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 			library: &config.Library{
 				Name:    "test-library",
 				Version: "1.2.3",
+				Postprocess: &config.Postprocess{
+					Replace: []config.ReplaceConfig{
+						{
+							Path:        "TestFile.java",
+							Original:    "World",
+							Replacement: "Go",
+						},
+					},
+				},
 				Java: &config.JavaModule{
 					GroupID:    "com.google.cloud",
 					ArtifactID: "test-library",
@@ -1268,6 +1279,15 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		err := postProcessLibrary(t.Context(), p)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		// Verify replacement was applied
+		content, err := os.ReadFile(testFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(content) != "Hello Go" {
+			t.Errorf("expected Hello Go, got %q", string(content))
 		}
 	})
 }

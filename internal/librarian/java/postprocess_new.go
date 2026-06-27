@@ -17,7 +17,6 @@ package java
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -27,16 +26,15 @@ import (
 )
 
 // postProcessLibraryNew implements the new postprocessing flow, bypassing owlbot.py.
-// It applies operations from postprocess.yaml, and renders the README.md directly
+// It applies post-processing operations configured in librarian.yaml, and renders the README.md directly
 // on the generated files in their final destinations.
 func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) error {
-	// 1. Load postprocess.yaml and apply operations
-	postprocessYamlPath := filepath.Join(p.outDir, "postprocess.yaml")
-	if _, err := os.Stat(postprocessYamlPath); err == nil {
-		cfg, err := postprocessing.ParseConfig(ctx, postprocessYamlPath)
-		if err != nil {
-			return fmt.Errorf("failed to parse postprocess.yaml: %w", err)
+	// 1. Load postprocess configuration and apply operations
+	if p.library.Postprocess != nil {
+		if err := postprocessing.Validate(p.library.Postprocess); err != nil {
+			return fmt.Errorf("invalid postprocess config: %w", err)
 		}
+		cfg := p.library.Postprocess
 
 		keepSet := make(map[string]bool)
 		for _, k := range p.library.Keep {

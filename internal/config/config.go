@@ -323,6 +323,48 @@ type Library struct {
 
 	// Swift contains Swift-specific library configuration.
 	Swift *SwiftPackage `yaml:"swift,omitempty"`
+
+	// Postprocess contains post-processing operations (copies, removes, replacements)
+	// that are executed after code generation.
+	Postprocess *Postprocess `yaml:"postprocess,omitempty"`
+}
+
+// Postprocess represents post-processing configuration options integrated into librarian.yaml.
+type Postprocess struct {
+	Replace          []ReplaceConfig      `yaml:"replace,omitempty"`
+	ReplaceRegex     []ReplaceRegexConfig `yaml:"replace_regex,omitempty"`
+	CopyFile         []CopyConfig         `yaml:"copy_file,omitempty"`
+	RemoveFile       []string             `yaml:"remove_file,omitempty"`
+	MethodOperations []MethodOperation    `yaml:"method_operations,omitempty"`
+}
+
+// MethodOperation represents a method-level operation like delete, duplicate, or deprecate.
+type MethodOperation struct {
+	Path               string `yaml:"path"`
+	Action             string `yaml:"action"`
+	FuncName           string `yaml:"func_name"`
+	NewName            string `yaml:"new_name,omitempty"`            // Used for duplicate
+	DeprecationMessage string `yaml:"deprecation_message,omitempty"` // Used for deprecate
+}
+
+// ReplaceConfig represents a replacement rule.
+type ReplaceConfig struct {
+	Path        string `yaml:"path"`
+	Original    string `yaml:"original"`
+	Replacement string `yaml:"replacement"`
+}
+
+// ReplaceRegexConfig represents a regex replacement rule.
+type ReplaceRegexConfig struct {
+	Path        string `yaml:"path"`
+	Pattern     string `yaml:"pattern"`
+	Replacement string `yaml:"replacement"`
+}
+
+// CopyConfig represents a file copy rule.
+type CopyConfig struct {
+	Src string `yaml:"src"`
+	Dst string `yaml:"dst"`
 }
 
 // API describes an API to include in a library.

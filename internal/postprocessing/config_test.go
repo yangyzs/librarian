@@ -15,79 +15,36 @@
 package postprocessing
 
 import (
-	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/googleapis/librarian/internal/config"
 )
 
-func TestParseConfig(t *testing.T) {
-	yamlContent := `
-replace:
-  - path: path/to/file.java
-    original: "old string"
-    replacement: "new string"
-replace_regex:
-  - path: path/to/file.java
-    pattern: "pattern"
-    replacement: "replacement"
-copy_file:
-  - src: path/to/src.java
-    dst: path/to/dst.java
-remove_file:
-  - path/to/file_to_remove.java
-
-method_operations:
-  - path: path/to/file.java
-    action: delete
-    func_name: "public void toDelete()"
-  - path: path/to/file.java
-    action: duplicate
-    func_name: "public void toDuplicate()"
-    new_name: "duplicated"
-  - path: path/to/file.java
-    action: deprecate
-    func_name: "public void toDeprecate()"
-    deprecation_message: "Use alternative instead."
-`
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "postprocess.yaml")
-	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := ParseConfig(context.Background(), configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := &Config{
-		Replace: []ReplaceConfig{
+func TestValidate_Success(t *testing.T) {
+	c := &config.Postprocess{
+		Replace: []config.ReplaceConfig{
 			{
 				Path:        "path/to/file.java",
 				Original:    "old string",
 				Replacement: "new string",
 			},
 		},
-		ReplaceRegex: []ReplaceRegexConfig{
+		ReplaceRegex: []config.ReplaceRegexConfig{
 			{
 				Path:        "path/to/file.java",
 				Pattern:     "pattern",
 				Replacement: "replacement",
 			},
 		},
-		CopyFile: []CopyConfig{
+		CopyFile: []config.CopyConfig{
 			{
 				Src: "path/to/src.java",
 				Dst: "path/to/dst.java",
 			},
 		},
 		RemoveFile: []string{"path/to/file_to_remove.java"},
-
-		MethodOperations: []MethodOperation{
+		MethodOperations: []config.MethodOperation{
 			{
 				Path:     "path/to/file.java",
 				Action:   "delete",
@@ -108,49 +65,92 @@ method_operations:
 		},
 	}
 
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("ParseConfig() mismatch (-want +got):\n%s", diff)
+	if err := Validate(c); err != nil {
+		t.Fatalf("Validate() expected no error, got: %v", err)
 	}
 }
 
-func TestParseConfig_FileNotFound(t *testing.T) {
-	_, err := ParseConfig(context.Background(), "non-existent-file.yaml")
-	if err == nil {
-		t.Error("ParseConfig() expected error for non-existent file, got nil")
-	}
-}
-
-func TestParseConfig_InvalidYAML(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "postprocess.yaml")
-	if err := os.WriteFile(configPath, []byte("invalid yaml content"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := ParseConfig(context.Background(), configPath)
-	if err == nil {
-		t.Error("ParseConfig() expected error for invalid YAML, got nil")
-	}
-}
-
-func TestParseConfig_InvalidSignature(t *testing.T) {
-	yamlContent := `
-method_operations:
-  - path: path/to/file.java
-    action: delete
-    func_name: "invalidSignatureNoParentheses"
-`
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "postprocess.yaml")
-	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := ParseConfig(context.Background(), configPath)
-	if err == nil {
-		t.Fatal("ParseConfig() expected error for invalid signature, got nil")
-	}
-	if !errors.Is(err, errInvalidSignature) {
-		t.Errorf("expected error to wrap errInvalidSignature, got %v", err)
+func TestValidate_Errors(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		config  *config.Postprocess
+		wantErr error
+	}{
+		{
+			name: "invalid signature for delete",
+			config: &config.Postprocess{
+				MethodOperations: []config.MethodOperation{
+					{
+						Path:     "path/to/file.java",
+						Action:   "delete",
+						FuncName: "invalidSignature",
+					},
+				},
+			},
+			wantErr: errInvalidSignature,
+		},
+		{
+			name: "invalid signature for duplicate",
+			config: &config.Postprocess{
+				MethodOperations: []config.MethodOperation{
+					{
+						Path:     "path/to/file.java",
+						Action:   "duplicate",
+						FuncName: "invalidSignature",
+						NewName:  "foo",
+					},
+				},
+			},
+			wantErr: errInvalidSignature,
+		},
+		{
+			name: "missing new name for duplicate",
+			config: &config.Postprocess{
+				MethodOperations: []config.MethodOperation{
+					{
+						Path:     "path/to/file.java",
+						Action:   "duplicate",
+						FuncName: "void foo()",
+						NewName:  "",
+					},
+				},
+			},
+			wantErr: errEmptyNewName,
+		},
+		{
+			name: "invalid signature for deprecate",
+			config: &config.Postprocess{
+				MethodOperations: []config.MethodOperation{
+					{
+						Path:               "path/to/file.java",
+						Action:             "deprecate",
+						FuncName:           "invalidSignature",
+						DeprecationMessage: "foo",
+					},
+				},
+			},
+			wantErr: errInvalidSignature,
+		},
+		{
+			name: "missing message for deprecate",
+			config: &config.Postprocess{
+				MethodOperations: []config.MethodOperation{
+					{
+						Path:               "path/to/file.java",
+						Action:             "deprecate",
+						FuncName:           "void foo()",
+						DeprecationMessage: "",
+					},
+				},
+			},
+			wantErr: errEmptyDeprecationMessage,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := Validate(test.config)
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("Validate() error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
 	}
 }

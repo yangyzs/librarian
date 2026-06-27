@@ -33,8 +33,8 @@ var (
 	openExcludeRegex  = regexp.MustCompile(`\[START_EXCLUDE\]`)
 	closeExcludeRegex = regexp.MustCompile(`\[END_EXCLUDE\]`)
 
-	reDecamelize1 = regexp.MustCompile(`([A-Z]+)([A-Z])([a-z0-9])`)
-	reDecamelize2 = regexp.MustCompile(`([a-z0-9])([A-Z])`)
+	// Matches lowercase/digit followed by uppercase (e.g., "FooBar" -> "Foo Bar").
+	camelCaseRegexp = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 
 	// reTitle matches a "sample-metadata:" marker followed immediately by a "title:" line on the next comment line.
 	reTitle = regexp.MustCompile(`sample-metadata:\s*\n\s*(?://|#)\s*title:\s*(.*)`)
@@ -45,47 +45,6 @@ var (
 	// errEmptyTitle indicates the extracted title value is empty.
 	errEmptyTitle = errors.New("title value cannot be empty")
 )
-
-// decamelize converts CamelCase or PascalCase titles into space-separated words,
-// exactly reproducing Python synthtool's _decamelize(value: str).
-func decamelize(value string) string {
-	if value == "" {
-		return ""
-	}
-	r := []rune(value)
-	r[0] = unicode.ToUpper(r[0])
-	s := string(r)
-
-	s = reDecamelize1.ReplaceAllString(s, "${1} ${2}${3}")
-	return reDecamelize2.ReplaceAllString(s, "${1} ${2}")
-}
-
-// isProductionSample reports whether the given path represents a production Java source file
-// located under a standard "src/main/java" path.
-func isProductionSample(path string) bool {
-	slashed := filepath.ToSlash(path)
-	return strings.HasSuffix(slashed, ".java") &&
-		(strings.HasPrefix(slashed, "src/main/java/") || strings.Contains(slashed, "/src/main/java/"))
-}
-
-// extractTitle extracts and validates the title override from Java comment blocks.
-// It expects a "title:" line to immediately follow the "sample-metadata:" marker.
-// Returns an error if the marker is present but the title line is missing, malformed, or empty.
-func extractTitle(content string) (string, error) {
-	if !strings.Contains(content, "sample-metadata:") {
-		return "", nil
-	}
-	matches := reTitle.FindStringSubmatch(content)
-	if len(matches) < 2 {
-		return "", errMissingTitle
-	}
-	// Trim surrounding whitespace, quotes, and carriage returns.
-	title := strings.Trim(matches[1], " \t\"'\r\n")
-	if title == "" {
-		return "", errEmptyTitle
-	}
-	return title, nil
-}
 
 // Sample represents a Java code sample and its metadata for README generation.
 type Sample struct {
@@ -145,6 +104,38 @@ func ExtractSamples(dir string) ([]Sample, error) {
 		})
 	}
 	return samples, nil
+}
+
+// decamelize converts CamelCase string to space-separated string (e.g. "CamelCase" -> "Camel Case").
+func decamelize(value string) string {
+	return strings.TrimSpace(camelCaseRegexp.ReplaceAllString(value, `$1 $2`))
+}
+
+// isProductionSample reports whether the given path represents a production Java source file
+// located under a standard "src/main/java" path.
+func isProductionSample(path string) bool {
+	slashed := filepath.ToSlash(path)
+	return strings.HasSuffix(slashed, ".java") &&
+		(strings.HasPrefix(slashed, "src/main/java/") || strings.Contains(slashed, "/src/main/java/"))
+}
+
+// extractTitle extracts and validates the title override from Java comment blocks.
+// It expects a "title:" line to immediately follow the "sample-metadata:" marker.
+// Returns an error if the marker is present but the title line is missing, malformed, or empty.
+func extractTitle(content string) (string, error) {
+	if !strings.Contains(content, "sample-metadata:") {
+		return "", nil
+	}
+	matches := reTitle.FindStringSubmatch(content)
+	if len(matches) < 2 {
+		return "", errMissingTitle
+	}
+	// Trim surrounding whitespace, quotes, and carriage returns.
+	title := strings.Trim(matches[1], " \t\"'\r\n")
+	if title == "" {
+		return "", errEmptyTitle
+	}
+	return title, nil
 }
 
 // ExtractSnippets walks the "samples" directory locating *.java and *.xml files.

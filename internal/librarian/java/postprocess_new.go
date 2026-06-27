@@ -16,6 +16,7 @@ package java
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -156,14 +157,25 @@ func applyToFiles(outDir string, pathPattern string, keepSet map[string]bool, ac
 	if err != nil {
 		return fmt.Errorf("failed to resolve glob for %s: %w", pathPattern, err)
 	}
+	isGlob := strings.ContainsAny(pathPattern, "*?[]{}")
+	var replacedAny bool
+	var lastTextNotFoundErr error
 	for _, file := range files {
 		relPath, _ := filepath.Rel(outDir, file)
 		if shouldPreserve(filepath.ToSlash(relPath), keepSet) {
 			continue
 		}
 		if err := action(file); err != nil {
+			if isGlob && errors.Is(err, postprocessing.ErrTextNotFound) {
+				lastTextNotFoundErr = err
+				continue
+			}
 			return err
 		}
+		replacedAny = true
+	}
+	if isGlob && len(files) > 0 && !replacedAny {
+		return lastTextNotFoundErr
 	}
 	return nil
 }

@@ -30,17 +30,14 @@ import (
 // It applies post-processing operations configured in librarian.yaml, and renders the README.md directly
 // on the generated files in their final destinations.
 func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) error {
+	keepSet := newKeepSet(p.library.Keep)
+
 	// 1. Load postprocess configuration and apply operations
 	if p.library.Postprocess != nil {
 		if err := postprocessing.Validate(p.library.Postprocess); err != nil {
 			return fmt.Errorf("invalid postprocess config: %w", err)
 		}
 		cfg := p.library.Postprocess
-
-		keepSet := make(map[string]bool)
-		for _, k := range p.library.Keep {
-			keepSet[strings.TrimSuffix(filepath.ToSlash(k), "/")] = true
-		}
 
 		// 1. Apply Copies
 		for _, c := range cfg.CopyFile {
@@ -138,7 +135,7 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 		return fmt.Errorf("failed to find BOM version: %w", err)
 	}
 
-	if err := RenderREADME(p.outDir, p.metadata, bomVersion, libraryVersion); err != nil {
+	if err := RenderREADME(p.outDir, p.metadata, bomVersion, libraryVersion, keepSet); err != nil {
 		return fmt.Errorf("failed to render README: %w", err)
 	}
 
@@ -161,8 +158,11 @@ func applyToFiles(outDir string, pathPattern string, keepSet map[string]bool, ac
 	var replacedAny bool
 	var lastTextNotFoundErr error
 	for _, file := range files {
-		relPath, _ := filepath.Rel(outDir, file)
-		if shouldPreserve(filepath.ToSlash(relPath), keepSet) {
+		relPath, err := filepath.Rel(outDir, file)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path for %s: %w", file, err)
+		}
+		if isKept(filepath.ToSlash(relPath), keepSet) {
 			continue
 		}
 		if err := action(file); err != nil {

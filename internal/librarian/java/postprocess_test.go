@@ -1172,7 +1172,6 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 
 	t.Run("UseGoPostprocessor true, no yaml, success", func(t *testing.T) {
 		outDir := t.TempDir()
-		t.Chdir(outDir)
 
 		if err := os.MkdirAll(filepath.Join(outDir, "owl-bot-staging"), 0755); err != nil {
 			t.Fatal(err)
@@ -1221,7 +1220,6 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 
 	t.Run("UseGoPostprocessor true, with postprocess config in library", func(t *testing.T) {
 		outDir := t.TempDir()
-		t.Chdir(outDir)
 
 		if err := os.MkdirAll(filepath.Join(outDir, "owl-bot-staging"), 0755); err != nil {
 			t.Fatal(err)

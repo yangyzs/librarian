@@ -17,8 +17,8 @@ package java
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
+	"log/slog"
 	"io/fs"
 	"os"
 	"path"
@@ -56,11 +56,8 @@ var (
 // It targets patterns like proto-*, grpc-*, and the main GAPIC module.
 func Clean(library *config.Library) error {
 	patterns := cleanPatterns(library)
-	fmt.Printf("Clean patterns for %s: %v\n", library.Output, patterns)
-	keepSet := make(map[string]bool)
-	for _, k := range library.Keep {
-		keepSet[strings.TrimSuffix(filepath.ToSlash(k), "/")] = true
-	}
+	slog.Debug("Clean patterns", "output", library.Output, "patterns", patterns)
+	keepSet := newKeepSet(library.Keep)
 	for pattern, useMarker := range patterns {
 		matches, err := filepath.Glob(filepath.Join(library.Output, pattern))
 		if err != nil {
@@ -145,8 +142,7 @@ func cleanPath(targetPath, root string, keepSet map[string]bool, useMarker bool)
 				return nil
 			}
 		}
-		fmt.Println("DELETING:", path)
-		fmt.Println("DELETING:", path)
+		slog.Info("Deleting path", "path", path)
 		return os.Remove(path)
 	})
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -173,15 +169,28 @@ func isDirNotEmpty(err error) bool {
 	return errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EEXIST)
 }
 
-// shouldPreserve returns true if the given slash-separated path should be preserved
-// based on the keepSet or standard preservation patterns.
-// It also checks if any ancestor directory is in the keepSet.
-func shouldPreserve(p string, keepSet map[string]bool) bool {
-	if keepSet[p] || isDefaultPreserved(p) {
+// newKeepSet normalizes a list of keep paths using [path.Clean] and returns
+// a map for fast lookup.
+func newKeepSet(keep []string) map[string]bool {
+	keepSet := make(map[string]bool)
+	for _, k := range keep {
+		normalized := path.Clean(filepath.ToSlash(k))
+		if normalized == "." {
+			continue
+		}
+		keepSet[strings.TrimSuffix(normalized, "/")] = true
+	}
+	return keepSet
+}
+
+// isKept returns true if the path is explicitly kept by the user.
+func isKept(p string, keepSet map[string]bool) bool {
+	cleanP := path.Clean(p)
+	if keepSet[cleanP] {
 		return true
 	}
 
-	dir := path.Dir(p)
+	dir := path.Dir(cleanP)
 	for dir != "." && dir != "/" && dir != "" {
 		if keepSet[dir] {
 			return true
@@ -189,6 +198,13 @@ func shouldPreserve(p string, keepSet map[string]bool) bool {
 		dir = path.Dir(dir)
 	}
 	return false
+}
+
+// shouldPreserve returns true if the given slash-separated path should be preserved
+// based on the keepSet or standard preservation patterns.
+// It also checks if any ancestor directory is in the keepSet.
+func shouldPreserve(p string, keepSet map[string]bool) bool {
+	return isKept(p, keepSet) || isDefaultPreserved(p)
 }
 
 func isDefaultPreserved(path string) bool {

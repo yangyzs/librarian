@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestRenderREADME(t *testing.T) {
@@ -50,7 +52,7 @@ About: {{ .Metadata.Partials.About }}
 	}
 
 	// Test case 1: Without partials
-	err := RenderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB")
+	err := RenderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,8 +69,8 @@ Version: 1.2.3-LIB
 BOMVersion: 1.0.0-BOM
 LibraryVersion: 1.2.3-LIB
 `
-	if strings.TrimSpace(string(outputContent)) != strings.TrimSpace(expected) {
-		t.Errorf("expected:\n%s\ngot:\n%s", expected, string(outputContent))
+	if diff := cmp.Diff(strings.TrimSpace(expected), strings.TrimSpace(string(outputContent))); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 
 	// Test case 2: With partials
@@ -79,7 +81,7 @@ LibraryVersion: 1.2.3-LIB
 		t.Fatal(err)
 	}
 
-	err = RenderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB")
+	err = RenderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,8 +99,29 @@ LibraryVersion: 1.2.3-LIB
 
 About: This is a great API.
 `
-	if strings.TrimSpace(string(outputContent)) != strings.TrimSpace(expectedWithPartials) {
-		t.Errorf("expected:\n%s\ngot:\n%s", expectedWithPartials, string(outputContent))
+	if diff := cmp.Diff(strings.TrimSpace(expectedWithPartials), strings.TrimSpace(string(outputContent))); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
+	}
+
+	// Test case 3: With README.md in keep list
+	keepSet := map[string]bool{"README.md": true}
+	customContent := "Custom README content"
+	err = os.WriteFile(outputPath, []byte(customContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = RenderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", keepSet)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outputContent, err = os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(customContent, string(outputContent)); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 

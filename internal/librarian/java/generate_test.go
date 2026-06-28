@@ -17,6 +17,7 @@ package java
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1113,7 +1114,7 @@ func TestGenerateAPI_Gating(t *testing.T) {
 			if gotProtoDir {
 				resNameFile := filepath.Join(stagingProtoPath, "com", "google", "cloud", "secretmanager", "v1", "SecretName.java")
 				_, errRes := os.Stat(resNameFile)
-				gotResNameFiles := !os.IsNotExist(errRes)
+				gotResNameFiles := !errors.Is(errRes, fs.ErrNotExist)
 				if gotResNameFiles != test.wantResNameFiles {
 					t.Errorf("gotResNameFiles = %v, want %v (file: %s)", gotResNameFiles, test.wantResNameFiles, resNameFile)
 				}
@@ -1125,7 +1126,7 @@ func TestGenerateAPI_Gating(t *testing.T) {
 func assertDirExists(t *testing.T, path string, want bool, desc string) bool {
 	t.Helper()
 	_, err := os.Stat(path)
-	got := !os.IsNotExist(err)
+	got := !errors.Is(err, fs.ErrNotExist)
 	if got != want {
 		t.Errorf("expected %s existence to be %v, got %v (path: %s)", desc, want, got, path)
 	}

@@ -146,7 +146,7 @@ func ExtractSnippets(dir string) (map[string]string, error) {
 
 	err := filepath.WalkDir(samplesDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				return nil
 			}
 			return err
@@ -181,44 +181,9 @@ func ExtractSnippets(dir string) (map[string]string, error) {
 	snippetLines := make(map[string][]string)
 
 	for _, file := range files {
-		f, err := os.Open(file)
-		if err != nil {
-			continue
-		}
-
-		openSnippets := make(map[string]bool)
-		excluding := false
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
-
-		for scanner.Scan() {
-			line := scanner.Text()
-			openMatch := openSnippetRegex.FindStringSubmatch(line)
-			closeMatch := closeSnippetRegex.FindStringSubmatch(line)
-
-			if len(openMatch) > 1 && !excluding {
-				name := openMatch[1]
-				openSnippets[name] = true
-				if _, exists := snippetLines[name]; !exists {
-					snippetLines[name] = []string{}
-				}
-			} else if len(closeMatch) > 1 && !excluding {
-				delete(openSnippets, closeMatch[1])
-			} else if openExcludeRegex.MatchString(line) {
-				excluding = true
-			} else if closeExcludeRegex.MatchString(line) {
-				excluding = false
-			} else if !excluding {
-				for s := range openSnippets {
-					snippetLines[s] = append(snippetLines[s], line)
-				}
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			f.Close()
+		if err := extractSnippetsFromFile(file, snippetLines); err != nil {
 			return nil, err
 		}
-		f.Close()
 	}
 
 	if len(snippetLines) == 0 {
@@ -266,4 +231,46 @@ func trimLeadingWhitespace(lines []string) string {
 		}
 	}
 	return sb.String()
+}
+
+// extractSnippetsFromFile parses a single file to extract tagged code snippets.
+func extractSnippetsFromFile(file string, snippetLines map[string][]string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", file, err)
+	}
+	defer f.Close()
+
+	openSnippets := make(map[string]bool)
+	excluding := false
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		openMatch := openSnippetRegex.FindStringSubmatch(line)
+		closeMatch := closeSnippetRegex.FindStringSubmatch(line)
+
+		if len(openMatch) > 1 && !excluding {
+			name := openMatch[1]
+			openSnippets[name] = true
+			if _, exists := snippetLines[name]; !exists {
+				snippetLines[name] = []string{}
+			}
+		} else if len(closeMatch) > 1 && !excluding {
+			delete(openSnippets, closeMatch[1])
+		} else if openExcludeRegex.MatchString(line) {
+			excluding = true
+		} else if closeExcludeRegex.MatchString(line) {
+			excluding = false
+		} else if !excluding {
+			for s := range openSnippets {
+				snippetLines[s] = append(snippetLines[s], line)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed scanning file %s: %w", file, err)
+	}
+	return nil
 }

@@ -144,10 +144,7 @@ func postProcessAPI(ctx context.Context, params postProcessParams) error {
 	coords := params.coords()
 
 	if params.useGoPostprocessor {
-		keepSet := make(map[string]bool)
-		for _, k := range params.library.Keep {
-			keepSet[strings.TrimSuffix(filepath.ToSlash(k), "/")] = true
-		}
+		keepSet := newKeepSet(params.library.Keep)
 		if err := restructureModules(params, params.outDir, keepSet, params.outDir); err != nil {
 			return fmt.Errorf("failed to restructure direct to outDir: %w", err)
 		}
@@ -495,14 +492,10 @@ func copyProtos(protos []protoFileToCopy, destDir string) error {
 // then matched against the library's Keep configuration.
 func removeKeptFilesFromStaging(library *config.Library, outDir string) error {
 	stagingDir := stagingDir(outDir)
-	if _, err := os.Stat(stagingDir); os.IsNotExist(err) {
+	if _, err := os.Stat(stagingDir); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	keepSet := make(map[string]bool)
-	for _, keep := range library.Keep {
-		normalized := strings.TrimSuffix(filepath.ToSlash(keep), "/")
-		keepSet[normalized] = true
-	}
+	keepSet := newKeepSet(library.Keep)
 	return filepath.WalkDir(stagingDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err

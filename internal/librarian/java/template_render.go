@@ -18,6 +18,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,16 +29,20 @@ import (
 )
 
 //go:embed template/README.md.go.tmpl
-var defaultTemplateFS embed.FS
+var defaultTemplateFs embed.FS
 
 // RenderREADME renders the README.md file using the template and metadata.
 // dir is the directory containing where README.md will be written.
-func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion string) error {
+func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion string, keepSet map[string]bool) error {
+	outputPath := filepath.Join(dir, "README.md")
+	if isKept("README.md", keepSet) {
+		return nil
+	}
+
 	partialsPath := filepath.Join(dir, ".readme-partials.yaml")
-	if _, err := os.Stat(partialsPath); os.IsNotExist(err) {
+	if _, err := os.Stat(partialsPath); errors.Is(err, fs.ErrNotExist) {
 		partialsPath = filepath.Join(dir, ".readme-partials.yml")
 	}
-	outputPath := filepath.Join(dir, "README.md")
 
 	// Read partials if exist
 	var partials map[string]interface{}
@@ -62,13 +67,13 @@ func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion
 	// Prepare data for template
 	distName := metadata.DistributionName
 	distParts := strings.Split(distName, ":")
-	groupID := ""
-	artifactID := ""
+	groupId := ""
+	artifactId := ""
 	if len(distParts) > 0 {
-		groupID = distParts[0]
+		groupId = distParts[0]
 	}
 	if len(distParts) > 1 {
-		artifactID = distParts[1]
+		artifactId = distParts[1]
 	}
 
 	repoName := metadata.Repo
@@ -84,7 +89,6 @@ func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion
 	if minJavaVersion == 0 {
 		minJavaVersion = 8 // Default to Java 8
 	}
-	fmt.Println("DEBUG minJavaVersion:", minJavaVersion)
 
 	samples, err := ExtractSamples(dir)
 	if err != nil {
@@ -121,8 +125,8 @@ func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion
 		LibraryVersion    string
 	}{
 		Metadata:          templateMetadata,
-		GroupID:           groupID,
-		ArtifactID:        artifactID,
+		GroupID:           groupId,
+		ArtifactID:        artifactId,
 		Version:           version,
 		RepoShort:         repoShort,
 		MigratedSplitRepo: false,
@@ -135,9 +139,9 @@ func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion
 	templatePath := filepath.Join(dir, "template", "README.md.go.tmpl")
 	tmplBytes, err := os.ReadFile(templatePath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			// Fallback to embedded default template
-			tmplBytes, err = defaultTemplateFS.ReadFile("template/README.md.go.tmpl")
+			tmplBytes, err = defaultTemplateFs.ReadFile("template/README.md.go.tmpl")
 		}
 		if err != nil {
 			return fmt.Errorf("failed to read template: %w", err)

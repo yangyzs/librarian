@@ -25,7 +25,6 @@ import (
 
 func TestPostProcessLibraryNew(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
 
 	// Setup structure directly in outDir
 	destDir := filepath.Join(tmpDir, "my-module", "src", "main", "java")

@@ -30,7 +30,11 @@ import (
 // It applies post-processing operations configured in librarian.yaml, and renders the README.md directly
 // on the generated files in their final destinations.
 func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) error {
-	keepSet := newKeepSet(p.library.Keep)
+	keepSet := make(map[string]bool, len(p.library.Keep))
+	for _, k := range p.library.Keep {
+		normalized := strings.TrimSuffix(filepath.ToSlash(k), "/")
+		keepSet[normalized] = true
+	}
 
 	// 1. Load postprocess configuration and apply operations
 	if p.library.Postprocess != nil {
@@ -41,7 +45,7 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 
 		// 1. Apply Copies
 		for _, c := range cfg.CopyFile {
-			if shouldPreserve(filepath.ToSlash(c.Dst), keepSet) {
+			if keepSet[filepath.ToSlash(c.Dst)] {
 				continue
 			}
 			srcAbs := filepath.Join(p.outDir, c.Src)
@@ -53,7 +57,7 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 
 		// 2. Apply Removes
 		for _, rem := range cfg.RemoveFile {
-			if err := applyToFiles(p.outDir, rem, keepSet, func(file string) error {
+			if err := applyToFiles(p.outDir, rem, func(file string) error {
 				if err := postprocessing.RemoveFile(file); err != nil {
 					return fmt.Errorf("failed to remove file %s: %w", file, err)
 				}
@@ -65,7 +69,7 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 
 		// 3. Apply Replacements
 		for _, r := range cfg.Replace {
-			if err := applyToFiles(p.outDir, r.Path, keepSet, func(file string) error {
+			if err := applyToFiles(p.outDir, r.Path, func(file string) error {
 				if err := postprocessing.Replace(file, r.Original, r.Replacement); err != nil {
 					return fmt.Errorf("failed to apply replacement in %s: %w", file, err)
 				}
@@ -77,7 +81,7 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 
 		// 4. Apply Regex Replacements
 		for _, r := range cfg.ReplaceRegex {
-			if err := applyToFiles(p.outDir, r.Path, keepSet, func(file string) error {
+			if err := applyToFiles(p.outDir, r.Path, func(file string) error {
 				if err := postprocessing.ReplaceRegex(file, r.Pattern, r.Replacement); err != nil {
 					return fmt.Errorf("failed to apply regex replacement in %s: %w", file, err)
 				}
@@ -89,7 +93,7 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 
 		// 5. Apply Method Operations
 		for _, mo := range cfg.MethodOperations {
-			if err := applyToFiles(p.outDir, mo.Path, keepSet, func(file string) error {
+			if err := applyToFiles(p.outDir, mo.Path, func(file string) error {
 				switch mo.Action {
 				case "delete":
 					if err := postprocessing.DeleteMethod(file, mo.FuncName, "java"); err != nil {
@@ -149,7 +153,7 @@ func resolveGlobs(outDir, pathPattern string) ([]string, error) {
 	return []string{filepath.Join(outDir, pathPattern)}, nil
 }
 
-func applyToFiles(outDir string, pathPattern string, keepSet map[string]bool, action func(string) error) error {
+func applyToFiles(outDir string, pathPattern string, action func(string) error) error {
 	files, err := resolveGlobs(outDir, pathPattern)
 	if err != nil {
 		return fmt.Errorf("failed to resolve glob for %s: %w", pathPattern, err)
@@ -158,13 +162,6 @@ func applyToFiles(outDir string, pathPattern string, keepSet map[string]bool, ac
 	var replacedAny bool
 	var lastTextNotFoundErr error
 	for _, file := range files {
-		relPath, err := filepath.Rel(outDir, file)
-		if err != nil {
-			return fmt.Errorf("failed to get relative path for %s: %w", file, err)
-		}
-		if isKept(filepath.ToSlash(relPath), keepSet) {
-			continue
-		}
 		if err := action(file); err != nil {
 			if isGlob && errors.Is(err, postprocessing.ErrTextNotFound) {
 				lastTextNotFoundErr = err

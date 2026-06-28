@@ -35,7 +35,7 @@ var defaultTemplateFs embed.FS
 // dir is the directory containing where README.md will be written.
 func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion string, keepSet map[string]bool) error {
 	outputPath := filepath.Join(dir, "README.md")
-	if isKept("README.md", keepSet) {
+	if keepSet["README.md"] {
 		return nil
 	}
 

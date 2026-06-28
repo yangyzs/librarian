@@ -144,7 +144,7 @@ func postProcessAPI(ctx context.Context, params postProcessParams) error {
 	coords := params.coords()
 
 	if params.useGoPostprocessor {
-		keepSet := newKeepSet(params.library.Keep)
+		keepSet := toKeepSet(params.library.Keep)
 		if err := restructureModules(params, params.outDir, keepSet, params.outDir); err != nil {
 			return fmt.Errorf("failed to restructure direct to outDir: %w", err)
 		}
@@ -490,12 +490,21 @@ func copyProtos(protos []protoFileToCopy, destDir string) error {
 // It strips this first component (the API base like "v1") from the relative
 // path to reconstruct the expected path relative to the library root, which is
 // then matched against the library's Keep configuration.
+func toKeepSet(keep []string) map[string]bool {
+	keepSet := make(map[string]bool, len(keep))
+	for _, k := range keep {
+		normalized := strings.TrimSuffix(filepath.ToSlash(k), "/")
+		keepSet[normalized] = true
+	}
+	return keepSet
+}
+
 func removeKeptFilesFromStaging(library *config.Library, outDir string) error {
 	stagingDir := stagingDir(outDir)
 	if _, err := os.Stat(stagingDir); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	keepSet := newKeepSet(library.Keep)
+	keepSet := toKeepSet(library.Keep)
 	return filepath.WalkDir(stagingDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err

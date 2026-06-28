@@ -169,6 +169,7 @@ func runProtoc(files []string, sourceCfg *sources.SourceConfig) ([]byte, error) 
 	args := []string{
 		"--include_imports",
 		"--include_source_info",
+		"--retain_options",
 		"--descriptor_set_out", tempFile.Name(),
 	}
 	if sourceCfg != nil {

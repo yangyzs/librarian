@@ -76,10 +76,7 @@ func TestRepoMetadata_write(t *testing.T) {
 func TestDeriveRepoMetadata_Overrides(t *testing.T) {
 	t.Parallel()
 	apiPath := "google/cloud/secretmanager/v1"
-	googleapis, err := filepath.Abs("../../testdata/googleapis")
-	if err != nil {
-		t.Fatal(err)
-	}
+	googleapis := "../../testdata/googleapis"
 
 	cfg := sample.Config()
 	cfg.Language = config.LanguageJava

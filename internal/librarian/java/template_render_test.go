@@ -36,14 +36,7 @@ LibraryVersion: {{ .LibraryVersion }}
 About: {{ .Metadata.Partials.About }}
 {{ end }}
 `
-	// Write mock template to disk
-	tmplDir := filepath.Join(tmpDir, "template")
-	if err := os.MkdirAll(tmplDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tmplDir, "README.md.go.tmpl"), []byte(templateContent), 0644); err != nil {
-		t.Fatal(err)
-	}
+	mockTmpl := template.Must(template.New("mock").Parse(templateContent))
 
 	metadata := &repoMetadata{
 		NamePretty:       "My API",
@@ -52,7 +45,7 @@ About: {{ .Metadata.Partials.About }}
 	}
 
 	// Test case 1: Without partials
-	err := RenderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", nil)
+	err := renderREADMEWithTemplate(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", nil, mockTmpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +74,7 @@ LibraryVersion: 1.2.3-LIB
 		t.Fatal(err)
 	}
 
-	err = RenderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", nil)
+	err = renderREADMEWithTemplate(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", nil, mockTmpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +104,7 @@ About: This is a great API.
 		t.Fatal(err)
 	}
 
-	err = RenderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", keepSet)
+	err = renderREADMEWithTemplate(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", keepSet, mockTmpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,12 +119,7 @@ About: This is a great API.
 }
 
 func TestRealTemplateParses(t *testing.T) {
-	tmplBytes, err := os.ReadFile("template/README.md.go.tmpl")
-	if err != nil {
-		t.Fatalf("failed to read real template: %v", err)
-	}
-	_, err = template.New("README").Parse(string(tmplBytes))
-	if err != nil {
-		t.Fatalf("failed to parse real template: %v", err)
+	if readmeTmplParsed == nil {
+		t.Fatal("readmeTmplParsed is nil")
 	}
 }

@@ -1243,13 +1243,6 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(outDir, ".repo-metadata.json"), []byte(metadata), 0644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.MkdirAll(filepath.Join(outDir, "template"), 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(outDir, "template", "README.md.go.tmpl"), []byte("dummy"), 0644); err != nil {
-			t.Fatal(err)
-		}
-
 		p := libraryPostProcessParams{
 			outDir: outDir,
 			metadata: &repoMetadata{
@@ -1290,15 +1283,9 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(outDir, ".repo-metadata.json"), []byte(metadata), 0644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.MkdirAll(filepath.Join(outDir, "template"), 0755); err != nil {
-			t.Fatal(err)
-		}
 		// Write a file to apply replacements on
 		testFile := filepath.Join(outDir, "TestFile.java")
 		if err := os.WriteFile(testFile, []byte("Hello World"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(outDir, "template", "README.md.go.tmpl"), []byte("dummy"), 0644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -1369,15 +1356,6 @@ public class File {
 }`
 	filePath := filepath.Join(destDir, "File.java")
 	if err := os.WriteFile(filePath, []byte(fileContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Write mock template to disk
-	tmplDir := filepath.Join(tmpDir, "template")
-	if err := os.MkdirAll(tmplDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tmplDir, "README.md.go.tmpl"), []byte(`# {{ .Metadata.Repo.NamePretty }}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1464,20 +1442,13 @@ public class File {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(readmeContent) != "# My API" {
-		t.Errorf("README content mismatch. Got: %s, expected: # My API", string(readmeContent))
+	if !strings.Contains(string(readmeContent), "# Google My API Client for Java") {
+		t.Errorf("README content mismatch. Got: %s", string(readmeContent))
 	}
 }
 
 func TestRunGoPostprocessor_ReleasedVersion(t *testing.T) {
 	tmpDir := t.TempDir()
-	tmplDir := filepath.Join(tmpDir, "template")
-	if err := os.MkdirAll(tmplDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tmplDir, "README.md.go.tmpl"), []byte(`Version: {{ .Version }}`), 0644); err != nil {
-		t.Fatal(err)
-	}
 
 	p := libraryPostProcessParams{
 		outDir: tmpDir,
@@ -1508,7 +1479,7 @@ func TestRunGoPostprocessor_ReleasedVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(readmeContent) != "Version: 3.43.1" {
-		t.Errorf("README content mismatch. Got: %s, expected: Version: 3.43.1", string(readmeContent))
+	if !strings.Contains(string(readmeContent), "3.43.1") {
+		t.Errorf("README content mismatch. Got: %s", string(readmeContent))
 	}
 }

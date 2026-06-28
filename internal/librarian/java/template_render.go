@@ -15,7 +15,7 @@
 package java
 
 import (
-	"embed"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -28,12 +28,19 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
-//go:embed template/README.md.go.tmpl
-var defaultTemplateFs embed.FS
+var (
+	//go:embed template/README.md.go.tmpl
+	readmeTmpl       string
+	readmeTmplParsed = template.Must(template.New("README").Parse(readmeTmpl))
+)
 
 // RenderREADME renders the README.md file using the template and metadata.
 // dir is the directory containing where README.md will be written.
 func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion string, keepSet map[string]bool) error {
+	return renderREADMEWithTemplate(dir, metadata, bomVersion, libraryVersion, keepSet, readmeTmplParsed)
+}
+
+func renderREADMEWithTemplate(dir string, metadata *repoMetadata, bomVersion, libraryVersion string, keepSet map[string]bool, tmpl *template.Template) error {
 	outputPath := filepath.Join(dir, "README.md")
 	if keepSet["README.md"] {
 		return nil
@@ -133,24 +140,6 @@ func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion
 		Monorepo:          true,
 		BOMVersion:        bomVersion,
 		LibraryVersion:    libraryVersion,
-	}
-
-	// Read and parse template from disk
-	templatePath := filepath.Join(dir, "template", "README.md.go.tmpl")
-	tmplBytes, err := os.ReadFile(templatePath)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			// Fallback to embedded default template
-			tmplBytes, err = defaultTemplateFs.ReadFile("template/README.md.go.tmpl")
-		}
-		if err != nil {
-			return fmt.Errorf("failed to read template: %w", err)
-		}
-	}
-
-	tmpl, err := template.New("README").Parse(string(tmplBytes))
-	if err != nil {
-		return fmt.Errorf("failed to parse template: %w", err)
 	}
 
 	// Execute template

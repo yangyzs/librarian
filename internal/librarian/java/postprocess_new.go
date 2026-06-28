@@ -119,9 +119,15 @@ func postProcessLibraryNew(ctx context.Context, p libraryPostProcessParams) erro
 
 	// 6. Render README.md
 
-	libraryVersion, err := deriveLastReleasedVersion(p.library.Version)
-	if err != nil {
-		return fmt.Errorf("failed to derive library version: %w", err)
+	var libraryVersion string
+	if p.library.Java != nil && p.library.Java.ReleasedVersion != "" {
+		libraryVersion = p.library.Java.ReleasedVersion
+	} else {
+		var err error
+		libraryVersion, err = deriveLastReleasedVersion(p.library.Version)
+		if err != nil {
+			return fmt.Errorf("failed to derive library version: %w", err)
+		}
 	}
 
 	if p.cfg == nil {

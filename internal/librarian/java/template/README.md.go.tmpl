@@ -9,7 +9,7 @@ Java idiomatic client for [{{ .Metadata.Repo.NamePretty }}][product-docs].
 - [Client Library Documentation][javadocs]
 
 {{ if and .Metadata.Partials .Metadata.Partials.DeprecationWarning }}{{ .Metadata.Partials.DeprecationWarning }}
-{{ end }}{{ if eq .Metadata.Repo.ReleaseLevel "preview" }}> Note: This client is a work-in-progress, and may occasionally
+{{ else if eq .Metadata.Repo.ReleaseLevel "preview" }}> Note: This client is a work-in-progress, and may occasionally
 > make backwards-incompatible changes.
 
 {{ end }}{{ if .MigratedSplitRepo }}:bus: In October 2022, this library has moved to

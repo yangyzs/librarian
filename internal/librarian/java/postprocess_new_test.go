@@ -140,3 +140,47 @@ public class File {
 		t.Errorf("README content mismatch. Got: %s, expected: # My API", string(readmeContent))
 	}
 }
+
+func TestPostProcessLibraryNew_ReleasedVersion(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmplDir := filepath.Join(tmpDir, "template")
+	if err := os.MkdirAll(tmplDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmplDir, "README.md.go.tmpl"), []byte(`Version: {{ .Version }}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := libraryPostProcessParams{
+		outDir: tmpDir,
+		cfg: &config.Config{
+			Default: &config.Default{
+				Java: &config.JavaDefault{
+					LibrariesBOMVersion: "1.0.0",
+				},
+			},
+		},
+		library: &config.Library{
+			Version: "3.44.0-SNAPSHOT",
+			Java: &config.JavaModule{
+				ReleasedVersion: "3.43.1",
+			},
+		},
+		metadata: &repoMetadata{
+			NamePretty: "My API",
+		},
+	}
+
+	if err := postProcessLibraryNew(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+
+	readmePath := filepath.Join(tmpDir, "README.md")
+	readmeContent, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(readmeContent) != "Version: 3.43.1" {
+		t.Errorf("README content mismatch. Got: %s, expected: Version: 3.43.1", string(readmeContent))
+	}
+}

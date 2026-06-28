@@ -158,7 +158,7 @@ func postProcessAPI(ctx context.Context, params postProcessParams) error {
 	}
 	if useGo {
 		keepSet := toKeepSet(params.library.Keep)
-		if err := restructureModules(params, params.outDir, keepSet, params.outDir); err != nil {
+		if err := restructureModulesDirect(params, params.outDir, keepSet); err != nil {
 			return fmt.Errorf("failed to restructure direct to outDir: %w", err)
 		}
 
@@ -315,10 +315,13 @@ func removeConflictingFiles(protoSrcDir string) error {
 func restructureToStaging(params postProcessParams) error {
 	stagingDir := stagingDir(params.outDir)
 	destRoot := filepath.Join(stagingDir, params.apiBase)
+	if params.javaAPI.Monolithic {
+		destRoot = filepath.Join(destRoot, "src")
+	}
 	if err := os.MkdirAll(destRoot, 0755); err != nil {
 		return fmt.Errorf("failed to create staging directory: %w", err)
 	}
-	return restructureModules(params, destRoot, nil, "")
+	return restructureModules(params, destRoot)
 }
 
 type moveAction struct {
@@ -326,36 +329,14 @@ type moveAction struct {
 	description string
 }
 
-func restructure(actions []moveAction, keepSet map[string]bool, libraryRoot string) error {
+func restructure(actions []moveAction) error {
 	for _, action := range actions {
 		if _, err := os.Stat(action.src); err == nil {
 			if err := os.MkdirAll(action.dest, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", action.dest, err)
 			}
-			if keepSet != nil {
-				keepFunc := func(p string) bool {
-					if shouldPreserve(p, keepSet) {
-						return true
-					}
-					// Also preserve existing files that lack the auto-generated marker.
-					destPath := filepath.Join(libraryRoot, p)
-					if _, err := os.Stat(destPath); err == nil {
-						if filepath.Ext(destPath) == ".java" {
-							isGen, err := hasMarker(destPath)
-							if err == nil && !isGen {
-								return true
-							}
-						}
-					}
-					return false
-				}
-				if err := filesystem.MoveAndMergeWithKeep(action.src, action.dest, libraryRoot, keepFunc); err != nil {
-					return fmt.Errorf("failed to move with keep %s: %w", action.description, err)
-				}
-			} else {
-				if err := filesystem.MoveAndMerge(action.src, action.dest); err != nil {
-					return fmt.Errorf("failed to move %s: %w", action.description, err)
-				}
+			if err := filesystem.MoveAndMerge(action.src, action.dest); err != nil {
+				return fmt.Errorf("failed to move %s: %w", action.description, err)
 			}
 		}
 	}
@@ -365,7 +346,85 @@ func restructure(actions []moveAction, keepSet map[string]bool, libraryRoot stri
 // restructureModules moves the generated code from the temporary versioned directory
 // tree into the destination root directory for GAPIC, Proto, gRPC, and samples.
 // It also copies the relevant proto files into the proto module.
-func restructureModules(params postProcessParams, destRoot string, keepSet map[string]bool, libraryRoot string) error {
+func restructureModules(params postProcessParams, destRoot string) error {
+	coords := params.coords()
+	tempProtoSrcDir := params.protoDir()
+	if params.library.Name != commonProtosLibrary {
+		if err := removeConflictingFiles(tempProtoSrcDir); err != nil {
+			return err
+		}
+	}
+
+	protoDest := filepath.Join(destRoot, coords.Proto.ArtifactID, "src", "main", "java")
+	grpcDest := filepath.Join(destRoot, coords.GRPC.ArtifactID, "src", "main", "java")
+	gapicMainDest := filepath.Join(destRoot, coords.GAPIC.ArtifactID, "src", "main")
+	gapicTestDest := filepath.Join(destRoot, coords.GAPIC.ArtifactID, "src", "test")
+	protoFilesDestDir := filepath.Join(destRoot, coords.Proto.ArtifactID, "src", "main", "proto")
+
+	if params.javaAPI.Monolithic {
+		protoDest = filepath.Join(destRoot, "main", "java")
+		grpcDest = filepath.Join(destRoot, "main", "java")
+		gapicMainDest = filepath.Join(destRoot, "main")
+		gapicTestDest = filepath.Join(destRoot, "test")
+		protoFilesDestDir = filepath.Join(destRoot, "main", "proto")
+	}
+
+	var actions []moveAction
+	if shouldGenerateProto(params.javaAPI) {
+		actions = append(actions, moveAction{
+			src:         tempProtoSrcDir,
+			dest:        protoDest,
+			description: "proto source",
+		})
+	}
+	if shouldGenerateGRPC(params.javaAPI) {
+		actions = append(actions, moveAction{
+			src:         params.gRPCDir(),
+			dest:        grpcDest,
+			description: "grpc source",
+		})
+	}
+	if shouldGenerateGAPIC(params.javaAPI) {
+		actions = append(actions, []moveAction{
+			{
+				src:         filepath.Join(params.gapicDir(), "src", "main"),
+				dest:        gapicMainDest,
+				description: "gapic source",
+			},
+			{
+				src:         filepath.Join(params.gapicDir(), "src", "test"),
+				dest:        gapicTestDest,
+				description: "gapic test",
+			},
+		}...)
+	}
+	if shouldGenerateResourceNames(params.javaAPI) {
+		actions = append(actions, moveAction{
+			src:         filepath.Join(params.gapicDir(), "proto", "src", "main", "java"),
+			dest:        protoDest,
+			description: "resource name source",
+		})
+	}
+	if params.includeSamples && shouldGenerateGAPIC(params.javaAPI) {
+		actions = append(actions, moveAction{
+			src:         filepath.Join(params.gapicDir(), "samples", "snippets", "generated", "src", "main", "java"),
+			dest:        filepath.Join(destRoot, "samples", "snippets", "generated"),
+			description: "samples",
+		})
+	}
+	if err := restructure(actions); err != nil {
+		return err
+	}
+	// Copy proto files to proto-*/src/main/proto
+	if shouldGenerateProto(params.javaAPI) {
+		if err := copyProtos(params.protosToCopy, protoFilesDestDir); err != nil {
+			return fmt.Errorf("failed to copy proto files: %w", err)
+		}
+	}
+	return nil
+}
+
+func restructureModulesDirect(params postProcessParams, destRoot string, keepSet map[string]bool) error {
 	coords := params.coords()
 	tempProtoSrcDir := params.protoDir()
 	if params.library.Name != commonProtosLibrary {
@@ -431,13 +490,41 @@ func restructureModules(params postProcessParams, destRoot string, keepSet map[s
 			description: "samples",
 		})
 	}
-	if err := restructure(actions, keepSet, libraryRoot); err != nil {
+	if err := restructureDirect(actions, keepSet, destRoot); err != nil {
 		return err
 	}
-	// Copy proto files to proto-*/src/main/proto
 	if shouldGenerateProto(params.javaAPI) {
 		if err := copyProtos(params.protosToCopy, protoFilesDestDir); err != nil {
 			return fmt.Errorf("failed to copy proto files: %w", err)
+		}
+	}
+	return nil
+}
+
+func restructureDirect(actions []moveAction, keepSet map[string]bool, libraryRoot string) error {
+	for _, action := range actions {
+		if _, err := os.Stat(action.src); err == nil {
+			if err := os.MkdirAll(action.dest, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", action.dest, err)
+			}
+			keepFunc := func(p string) bool {
+				if shouldPreserve(p, keepSet) {
+					return true
+				}
+				destPath := filepath.Join(libraryRoot, p)
+				if _, err := os.Stat(destPath); err == nil {
+					if filepath.Ext(destPath) == ".java" {
+						isGen, err := hasMarker(destPath)
+						if err == nil && !isGen {
+							return true
+						}
+					}
+				}
+				return false
+			}
+			if err := filesystem.MoveAndMergeWithKeep(action.src, action.dest, libraryRoot, keepFunc); err != nil {
+				return fmt.Errorf("failed to move with keep %s: %w", action.description, err)
+			}
 		}
 	}
 	return nil

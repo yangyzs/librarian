@@ -230,7 +230,7 @@ func TestRestructureModules(t *testing.T) {
 		javaAPI:        &config.JavaAPI{},
 	}
 	destRoot := filepath.Join(tmpDir, "dest")
-	if err := restructureModules(params, destRoot, nil, ""); err != nil {
+	if err := restructureModules(params, destRoot); err != nil {
 		t.Fatal(err)
 	}
 
@@ -277,7 +277,7 @@ func TestRestructureModules_CommonProtos(t *testing.T) {
 		},
 	}
 	destRoot := filepath.Join(tmpDir, "dest")
-	if err := restructureModules(params, destRoot, nil, ""); err != nil {
+	if err := restructureModules(params, destRoot); err != nil {
 		t.Fatal(err)
 	}
 	wantPath := filepath.Join(destRoot, "proto-google-common-protos", "src", "main", "java", "com", "google", "cloud", "location", "LocationsProto.java")
@@ -305,7 +305,7 @@ func TestRestructureModules_ShouldRemoveClasses(t *testing.T) {
 		javaAPI:        &config.JavaAPI{},
 	}
 	destRoot := filepath.Join(tmpDir, "dest")
-	if err := restructureModules(params, destRoot, nil, ""); err != nil {
+	if err := restructureModules(params, destRoot); err != nil {
 		t.Fatal(err)
 	}
 	wantPath := filepath.Join(destRoot, "proto-google-cloud-secretmanager-v1", "src", "main", "java", "com", "google", "cloud", "location", "LocationsProto.java")
@@ -362,7 +362,7 @@ func TestRestructureModules_SamplesDisabled(t *testing.T) {
 		javaAPI:        &config.JavaAPI{},
 	}
 	destRoot := filepath.Join(tmpDir, "dest")
-	if err := restructureModules(params, destRoot, nil, ""); err != nil {
+	if err := restructureModules(params, destRoot); err != nil {
 		t.Fatal(err)
 	}
 	// Verify sample file location DOES NOT exist
@@ -418,11 +418,71 @@ func TestRestructureModules_Monolithic(t *testing.T) {
 		},
 	}
 	destRoot := filepath.Join(tmpDir, "dest")
-	if err := restructureModules(params, destRoot, nil, ""); err != nil {
+	if err := restructureModules(params, destRoot); err != nil {
 		t.Fatal(err)
 	}
 
-	// Verify all files are in the same src directory
+	// Verify all files are in the same main directory (upstream staging structure)
+	files := []string{
+		filepath.Join(destRoot, "main", "java", "Gapic.java"),
+		filepath.Join(destRoot, "main", "java", "Grpc.java"),
+		filepath.Join(destRoot, "main", "java", "Proto.java"),
+	}
+	for _, f := range files {
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("expected file %s to exist, but it was not found: %v", f, err)
+		}
+	}
+}
+
+func TestRestructureModulesDirect_Monolithic(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	apiBase := "v1"
+	libraryID := "grafeas"
+
+	dirs := []string{
+		filepath.Join(tmpDir, apiBase, "gapic", "src", "main", "java"),
+		filepath.Join(tmpDir, apiBase, "grpc"),
+		filepath.Join(tmpDir, apiBase, "proto"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gapicFile := filepath.Join(tmpDir, apiBase, "gapic", "src", "main", "java", "Gapic.java")
+	if err := os.WriteFile(gapicFile, []byte("public class Gapic {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	grpcFile := filepath.Join(tmpDir, apiBase, "grpc", "Grpc.java")
+	if err := os.WriteFile(grpcFile, []byte("public class Grpc {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	protoFile := filepath.Join(tmpDir, apiBase, "proto", "Proto.java")
+	if err := os.WriteFile(protoFile, []byte("public class Proto {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	params := postProcessParams{
+		outDir: tmpDir,
+		library: &config.Library{
+			Name: libraryID,
+			Java: &config.JavaModule{
+				GroupID: "com.google.cloud",
+			},
+		},
+		apiBase: apiBase,
+
+		includeSamples: false,
+		javaAPI: &config.JavaAPI{
+			Monolithic: true,
+		},
+	}
+	destRoot := filepath.Join(tmpDir, "dest")
+	if err := restructureModulesDirect(params, destRoot, nil); err != nil {
+		t.Fatal(err)
+	}
+
 	files := []string{
 		filepath.Join(destRoot, "src", "main", "java", "Gapic.java"),
 		filepath.Join(destRoot, "src", "main", "java", "Grpc.java"),

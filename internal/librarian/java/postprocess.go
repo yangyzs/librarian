@@ -601,10 +601,14 @@ func toKeepSet(keep []string) map[string]bool {
 
 func removeKeptFilesFromStaging(library *config.Library, outDir string) error {
 	stagingDir := stagingDir(outDir)
-	if _, err := os.Stat(stagingDir); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(stagingDir); os.IsNotExist(err) {
 		return nil
 	}
-	keepSet := toKeepSet(library.Keep)
+	keepSet := make(map[string]bool)
+	for _, keep := range library.Keep {
+		normalized := strings.TrimSuffix(filepath.ToSlash(keep), "/")
+		keepSet[normalized] = true
+	}
 	return filepath.WalkDir(stagingDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err

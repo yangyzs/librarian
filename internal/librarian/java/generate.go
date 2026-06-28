@@ -57,7 +57,7 @@ var (
 )
 
 type generateAPIParams struct {
-	cfg       *config.Config
+	cfg      *config.Config
 	api      *config.API
 	library  *config.Library
 	srcCfg   *sources.SourceConfig

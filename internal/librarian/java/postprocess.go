@@ -305,9 +305,6 @@ func removeConflictingFiles(protoSrcDir string) error {
 func restructureToStaging(params postProcessParams) error {
 	stagingDir := stagingDir(params.outDir)
 	destRoot := filepath.Join(stagingDir, params.apiBase)
-	if params.javaAPI.Monolithic {
-		destRoot = filepath.Join(destRoot, "src")
-	}
 	if err := os.MkdirAll(destRoot, 0755); err != nil {
 		return fmt.Errorf("failed to create staging directory: %w", err)
 	}

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package postprocessing provides tools for the YAML-based postprocessing workflow.
 package postprocessing
 
 import (

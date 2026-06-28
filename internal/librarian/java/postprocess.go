@@ -675,11 +675,7 @@ func createOrVerifyOwlbotPy(outDir string) (err error) {
 }
 
 func runGoPostprocessor(ctx context.Context, p libraryPostProcessParams) error {
-	keepSet := make(map[string]bool, len(p.library.Keep))
-	for _, k := range p.library.Keep {
-		normalized := strings.TrimSuffix(filepath.ToSlash(k), "/")
-		keepSet[normalized] = true
-	}
+	keepSet := toKeepSet(p.library.Keep)
 
 	// 1. Load postprocess configuration and apply operations
 	if p.library.Postprocess != nil {

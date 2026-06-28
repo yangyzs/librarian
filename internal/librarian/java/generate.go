@@ -57,18 +57,17 @@ var (
 )
 
 type generateAPIParams struct {
-	cfg                *config.Config
-	api                *config.API
-	library            *config.Library
-	srcCfg             *sources.SourceConfig
-	outdir             string
-	metadata           *repoMetadata
-	apiCfg             *serviceconfig.API
-	useGoPostprocessor bool
+	cfg       *config.Config
+	api      *config.API
+	library  *config.Library
+	srcCfg   *sources.SourceConfig
+	outdir   string
+	metadata *repoMetadata
+	apiCfg   *serviceconfig.API
 }
 
 // Generate generates a Java client library.
-func Generate(ctx context.Context, cfg *config.Config, library *config.Library, srcs *sources.Sources, useGoPostprocessor bool) error {
+func Generate(ctx context.Context, cfg *config.Config, library *config.Library, srcs *sources.Sources) error {
 	if library.Java.GroupID == fakeGroupID {
 		return errUnrecognizedAPI
 	}
@@ -98,26 +97,24 @@ func Generate(ctx context.Context, cfg *config.Config, library *config.Library, 
 		transports[api.Path] = apiCfg.Transport(config.LanguageJava)
 		// metadata is needed for pom.xml generation in post process
 		if err := generateAPI(ctx, generateAPIParams{
-			cfg:                cfg,
-			api:                api,
-			library:            library,
-			srcCfg:             srcCfg,
-			outdir:             outdir,
-			metadata:           metadata,
-			apiCfg:             apiCfg,
-			useGoPostprocessor: useGoPostprocessor,
+			cfg:      cfg,
+			api:      api,
+			library:  library,
+			srcCfg:   srcCfg,
+			outdir:   outdir,
+			metadata: metadata,
+			apiCfg:   apiCfg,
 		}); err != nil {
 			return fmt.Errorf("failed to generate api %q: %w", api.Path, err)
 		}
 	}
 
 	if err := postProcessLibrary(ctx, libraryPostProcessParams{
-		cfg:                cfg,
-		library:            library,
-		outDir:             outdir,
-		metadata:           metadata,
-		transports:         transports,
-		useGoPostprocessor: useGoPostprocessor,
+		cfg:        cfg,
+		library:    library,
+		outDir:     outdir,
+		metadata:   metadata,
+		transports: transports,
 	}); err != nil {
 		return err
 	}
@@ -141,14 +138,13 @@ func generateAPI(ctx context.Context, params generateAPIParams) error {
 		additionalProtosToCopyRel := processAdditionalProtos(javaAPI, googleapisDir)
 
 	postParams := postProcessParams{
-		cfg:                params.cfg,
-		library:            params.library,
-		javaAPI:            javaAPI,
-		metadata:           params.metadata,
-		outDir:             params.outdir,
-		apiBase:            deriveAPIBase(params.library, params.api.Path),
-		includeSamples:     *javaAPI.Samples,
-		useGoPostprocessor: params.useGoPostprocessor,
+		cfg:            params.cfg,
+		library:        params.library,
+		javaAPI:        javaAPI,
+		metadata:       params.metadata,
+		outDir:         params.outdir,
+		apiBase:        deriveAPIBase(params.library, params.api.Path),
+		includeSamples: *javaAPI.Samples,
 	}
 	gapicDir := postParams.gapicDir()
 	gRPCDir := postParams.gRPCDir()

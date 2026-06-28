@@ -73,15 +73,9 @@ latest API definitions is:
 				Name:  "all",
 				Usage: "generate all libraries",
 			},
-			&cli.BoolFlag{
-				Name:    "go-postprocessor",
-				Aliases: []string{"go-post"},
-				Usage:   "use the new Go postprocessor for Java libraries",
-			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			all := cmd.Bool("all")
-			useGoPostprocessor := cmd.Bool("go-postprocessor")
 			libraryName := cmd.Args().First()
 			if !all && libraryName == "" {
 				return errMissingLibraryOrAllFlag
@@ -93,12 +87,12 @@ latest API definitions is:
 			if err != nil {
 				return err
 			}
-			return runGenerate(ctx, cfg, all, libraryName, useGoPostprocessor)
+			return runGenerate(ctx, cfg, all, libraryName)
 		},
 	}
 }
 
-func runGenerate(ctx context.Context, cfg *config.Config, all bool, libraryName string, useGoPostprocessor bool) error {
+func runGenerate(ctx context.Context, cfg *config.Config, all bool, libraryName string) error {
 	sources, err := LoadSources(ctx, cfg.Sources)
 	if err != nil {
 		return err
@@ -145,7 +139,7 @@ func runGenerate(ctx context.Context, cfg *config.Config, all bool, libraryName 
 	if err := cleanLibraries(cfg.Language, libraries); err != nil {
 		return err
 	}
-	return generateLibraries(ctx, cfg, libraries, sources, useGoPostprocessor)
+	return generateLibraries(ctx, cfg, libraries, sources)
 }
 
 // cleanLibraries iterates over all the given libraries sequentially,
@@ -187,7 +181,7 @@ func cleanLibraries(language string, libraries []*config.Library) error {
 // generateLibraries generates and formats all the given libraries,
 // delegating to language-specific code. Each language chooses its own
 // concurrency strategy for these two steps.
-func generateLibraries(ctx context.Context, cfg *config.Config, libraries []*config.Library, src *sources.Sources, useGoPostprocessor bool) error {
+func generateLibraries(ctx context.Context, cfg *config.Config, libraries []*config.Library, src *sources.Sources) error {
 	switch cfg.Language {
 	case config.LanguageDart:
 		g, gctx := errgroup.WithContext(ctx)
@@ -247,7 +241,7 @@ func generateLibraries(ctx context.Context, cfg *config.Config, libraries []*con
 				allMissingArtifacts = append(allMissingArtifacts, java.MissingArtifact{ID: id, Library: library})
 			}
 
-			if err := java.Generate(ctx, cfg, library, src, useGoPostprocessor); err != nil {
+			if err := java.Generate(ctx, cfg, library, src); err != nil {
 				return fmt.Errorf("generate library %q (%s): %w", library.Name, cfg.Language, err)
 			}
 			if err := java.Format(ctx, library); err != nil {

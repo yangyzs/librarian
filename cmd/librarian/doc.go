@@ -106,8 +106,7 @@ Examples:
 
 Flags:
 
-	--all                          generate all libraries
-	--go-postprocessor, --go-post  use the new Go postprocessor for Java libraries
+	--all       generate all libraries
 
 A typical librarian workflow for regenerating every library against the
 latest API definitions is:

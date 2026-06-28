@@ -51,6 +51,9 @@ func TestPostProcessAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := os.WriteFile(filepath.Join(outdir, "owlbot.py"), []byte("#!/usr/bin/env python3\npass"), 0755); err != nil {
+		t.Fatal(err)
+	}
 	content := "package com.google.cloud.secretmanager.v1;"
 	grpcFile := filepath.Join(gRPCDir, "GRPCFile.java")
 	if err := os.WriteFile(grpcFile, []byte(content), 0644); err != nil {
@@ -1170,7 +1173,7 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		}
 	})
 
-	t.Run("UseGoPostprocessor true, no yaml, success", func(t *testing.T) {
+	t.Run("No owlbot script present, no yaml, success", func(t *testing.T) {
 		outDir := t.TempDir()
 
 		if err := os.MkdirAll(filepath.Join(outDir, "owl-bot-staging"), 0755); err != nil {
@@ -1188,8 +1191,7 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		}
 
 		p := libraryPostProcessParams{
-			outDir:             outDir,
-			useGoPostprocessor: true,
+			outDir: outDir,
 			metadata: &repoMetadata{
 				NamePretty: "test-library",
 			},
@@ -1218,7 +1220,7 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		}
 	})
 
-	t.Run("UseGoPostprocessor true, with postprocess config in library", func(t *testing.T) {
+	t.Run("No owlbot script present, with postprocess config in library", func(t *testing.T) {
 		outDir := t.TempDir()
 
 		if err := os.MkdirAll(filepath.Join(outDir, "owl-bot-staging"), 0755); err != nil {
@@ -1241,8 +1243,7 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 		}
 
 		p := libraryPostProcessParams{
-			outDir:             outDir,
-			useGoPostprocessor: true,
+			outDir: outDir,
 			metadata: &repoMetadata{
 				NamePretty: "test-library",
 			},
@@ -1288,4 +1289,166 @@ func TestPostProcessLibrary_Branching(t *testing.T) {
 			t.Errorf("expected Hello Go, got %q", string(content))
 		}
 	})
+}
+
+func TestRunGoPostprocessor(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Setup structure directly in outDir
+	destDir := filepath.Join(tmpDir, "my-module", "src", "main", "java")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	fileContent := `package com.example;
+public class File {
+	public void oldFunc() {}
+	public void toDelete() {
+		System.out.println("delete me");
+	}
+}`
+	filePath := filepath.Join(destDir, "File.java")
+	if err := os.WriteFile(filePath, []byte(fileContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write mock template to disk
+	tmplDir := filepath.Join(tmpDir, "template")
+	if err := os.MkdirAll(tmplDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmplDir, "README.md.go.tmpl"), []byte(`# {{ .Metadata.Repo.NamePretty }}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := libraryPostProcessParams{
+		outDir: tmpDir,
+		cfg: &config.Config{
+			Default: &config.Default{
+				Java: &config.JavaDefault{
+					LibrariesBOMVersion: "1.0.0",
+				},
+			},
+		},
+		library: &config.Library{
+			Version: "1.2.3",
+			Postprocess: &config.Postprocess{
+				Replace: []config.ReplaceConfig{
+					{
+						Path:        "**/File.java",
+						Original:    "oldFunc",
+						Replacement: "newFunc",
+					},
+				},
+				MethodOperations: []config.MethodOperation{
+					{
+						Path:     "**/File.java",
+						Action:   "delete",
+						FuncName: "public void toDelete()",
+					},
+					{
+						Path:     "**/File.java",
+						Action:   "duplicate",
+						FuncName: "public void newFunc()",
+						NewName:  "newFuncCopy",
+					},
+					{
+						Path:               "**/File.java",
+						Action:             "deprecate",
+						FuncName:           "public void newFuncCopy()",
+						DeprecationMessage: "Use newFunc instead.",
+					},
+				},
+			},
+		},
+		metadata: &repoMetadata{
+			NamePretty:       "My API",
+			DistributionName: "com.google.cloud:google-cloud-myapi",
+			Repo:             "googleapis/google-cloud-java",
+		},
+	}
+
+	err := runGoPostprocessor(t.Context(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify File was modified
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sContent := string(content)
+	if !strings.Contains(sContent, "newFunc") {
+		t.Errorf("Replacement was not applied. Content: %s", sContent)
+	}
+	if strings.Contains(sContent, "toDelete") {
+		t.Errorf("Delete function was not applied. Content: %s", sContent)
+	}
+	if !strings.Contains(sContent, "newFuncCopy") {
+		t.Errorf("Duplicate method operation was not applied. Content: %s", sContent)
+	}
+	if !strings.Contains(sContent, "@Deprecated\n\tpublic void newFuncCopy()") {
+		t.Errorf("@Deprecated annotation was not applied correctly. Content: %s", sContent)
+	}
+	if !strings.Contains(sContent, "* @deprecated Use newFunc instead.") {
+		t.Errorf("Javadoc deprecation tag was not applied correctly. Content: %s", sContent)
+	}
+
+	// Verify README was rendered
+	readmePath := filepath.Join(tmpDir, "README.md")
+	if _, err := os.Stat(readmePath); err != nil {
+		t.Errorf("README.md was not rendered: %v", err)
+	}
+	readmeContent, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(readmeContent) != "# My API" {
+		t.Errorf("README content mismatch. Got: %s, expected: # My API", string(readmeContent))
+	}
+}
+
+func TestRunGoPostprocessor_ReleasedVersion(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmplDir := filepath.Join(tmpDir, "template")
+	if err := os.MkdirAll(tmplDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmplDir, "README.md.go.tmpl"), []byte(`Version: {{ .Version }}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := libraryPostProcessParams{
+		outDir: tmpDir,
+		cfg: &config.Config{
+			Default: &config.Default{
+				Java: &config.JavaDefault{
+					LibrariesBOMVersion: "1.0.0",
+				},
+			},
+		},
+		library: &config.Library{
+			Version: "3.44.0-SNAPSHOT",
+			Java: &config.JavaModule{
+				ReleasedVersion: "3.43.1",
+			},
+		},
+		metadata: &repoMetadata{
+			NamePretty: "My API",
+		},
+	}
+
+	if err := runGoPostprocessor(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+
+	readmePath := filepath.Join(tmpDir, "README.md")
+	readmeContent, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(readmeContent) != "Version: 3.43.1" {
+		t.Errorf("README content mismatch. Got: %s, expected: Version: 3.43.1", string(readmeContent))
+	}
 }

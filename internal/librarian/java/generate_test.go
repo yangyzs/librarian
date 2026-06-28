@@ -17,7 +17,6 @@ package java
 import (
 	"context"
 	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -303,11 +302,7 @@ func TestGenerateAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	absGoogleapisDir, err := filepath.Abs(googleapisDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	apiCfg, err := serviceconfig.Find(absGoogleapisDir, "google/cloud/secretmanager/v1", config.LanguageJava)
+	apiCfg, err := serviceconfig.Find(googleapisDir, "google/cloud/secretmanager/v1", config.LanguageJava)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +310,7 @@ func TestGenerateAPI(t *testing.T) {
 		cfg:     cfg,
 		api:     library.APIs[0],
 		library: library,
-		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: absGoogleapisDir}, nil),
+		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: googleapisDir}, nil),
 		outdir:  outdir,
 		metadata: &repoMetadata{
 			NamePretty:     "Secret Manager",
@@ -372,11 +367,7 @@ func TestGenerateAPI_ProtoOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	absGoogleapisDir, err := filepath.Abs(googleapisDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	apiCfg, err := serviceconfig.Find(absGoogleapisDir, "google/cloud/gkehub/policycontroller/v1beta", config.LanguageJava)
+	apiCfg, err := serviceconfig.Find(googleapisDir, "google/cloud/gkehub/policycontroller/v1beta", config.LanguageJava)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +375,7 @@ func TestGenerateAPI_ProtoOnly(t *testing.T) {
 		cfg:     cfg,
 		api:     library.APIs[0],
 		library: library,
-		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: absGoogleapisDir}, nil),
+		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: googleapisDir}, nil),
 		outdir:  outdir,
 		metadata: &repoMetadata{
 			NamePretty: "GKE Hub API",
@@ -520,11 +511,7 @@ func TestGenerateAPI_WithAdditionalProtosToGenerateAndCopy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	absGoogleapisDir, err := filepath.Abs(googleapisDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	apiCfg, err := serviceconfig.Find(absGoogleapisDir, "google/cloud/secretmanager/v1", config.LanguageJava)
+	apiCfg, err := serviceconfig.Find(googleapisDir, "google/cloud/secretmanager/v1", config.LanguageJava)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +519,7 @@ func TestGenerateAPI_WithAdditionalProtosToGenerateAndCopy(t *testing.T) {
 		cfg:     cfg,
 		api:     library.APIs[0],
 		library: library,
-		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: absGoogleapisDir}, nil),
+		srcCfg:  sources.NewSourceConfig(&sources.Sources{Googleapis: googleapisDir}, nil),
 		outdir:  outdir,
 		metadata: &repoMetadata{
 			NamePretty:     "Secret Manager",
@@ -1114,7 +1101,7 @@ func TestGenerateAPI_Gating(t *testing.T) {
 			if gotProtoDir {
 				resNameFile := filepath.Join(stagingProtoPath, "com", "google", "cloud", "secretmanager", "v1", "SecretName.java")
 				_, errRes := os.Stat(resNameFile)
-				gotResNameFiles := !errors.Is(errRes, fs.ErrNotExist)
+				gotResNameFiles := !os.IsNotExist(errRes)
 				if gotResNameFiles != test.wantResNameFiles {
 					t.Errorf("gotResNameFiles = %v, want %v (file: %s)", gotResNameFiles, test.wantResNameFiles, resNameFile)
 				}
@@ -1126,7 +1113,7 @@ func TestGenerateAPI_Gating(t *testing.T) {
 func assertDirExists(t *testing.T, path string, want bool, desc string) bool {
 	t.Helper()
 	_, err := os.Stat(path)
-	got := !errors.Is(err, fs.ErrNotExist)
+	got := !os.IsNotExist(err)
 	if got != want {
 		t.Errorf("expected %s existence to be %v, got %v (path: %s)", desc, want, got, path)
 	}

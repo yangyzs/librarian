@@ -16,6 +16,7 @@ package java
 
 import (
 	"bufio"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -24,9 +25,17 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"text/template"
+
+	"github.com/googleapis/librarian/internal/yaml"
+	"github.com/iancoleman/strcase"
 )
 
 var (
+	//go:embed template/README.md.go.tmpl
+	readmeTmpl       string
+	readmeTmplParsed = template.Must(template.New("README").Parse(readmeTmpl))
+
 	openSnippetRegex  = regexp.MustCompile(`\[START ([a-zA-Z0-9_-]+)\]`)
 	closeSnippetRegex = regexp.MustCompile(`\[END ([a-zA-Z0-9_-]+)\]`)
 	openExcludeRegex  = regexp.MustCompile(`\[START_EXCLUDE\]`)
@@ -273,4 +282,122 @@ func extractSnippetsFromFile(file string, snippetLines map[string][]string) erro
 		return fmt.Errorf("failed scanning file %s: %w", file, err)
 	}
 	return nil
+}
+
+// RenderREADME renders the README.md file using the template and metadata.
+// dir is the directory containing where README.md will be written.
+func RenderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion string, keepSet map[string]bool) error {
+	return renderREADMEWithTemplate(dir, metadata, bomVersion, libraryVersion, keepSet, readmeTmplParsed)
+}
+
+func renderREADMEWithTemplate(dir string, metadata *repoMetadata, bomVersion, libraryVersion string, keepSet map[string]bool, tmpl *template.Template) error {
+	outputPath := filepath.Join(dir, "README.md")
+	if keepSet["README.md"] {
+		return nil
+	}
+
+	partialsPath := filepath.Join(dir, ".readme-partials.yaml")
+	if _, err := os.Stat(partialsPath); errors.Is(err, fs.ErrNotExist) {
+		partialsPath = filepath.Join(dir, ".readme-partials.yml")
+	}
+
+	// Read partials if exist
+	var partials map[string]interface{}
+	if _, err := os.Stat(partialsPath); err == nil {
+		partialsBytes, err := os.ReadFile(partialsPath)
+		if err != nil {
+			return fmt.Errorf("failed to read partials: %w", err)
+		}
+		p, err := yaml.Unmarshal[map[string]interface{}](partialsBytes)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal partials: %w", err)
+		}
+		partials = *p
+	}
+
+	// Capitalize keys of partials for template
+	capitalizedPartials := make(map[string]interface{})
+	for k, v := range partials {
+		capitalizedPartials[strcase.ToCamel(k)] = v
+	}
+
+	// Prepare data for template
+	distName := metadata.DistributionName
+	distParts := strings.Split(distName, ":")
+	groupId := ""
+	artifactId := ""
+	if len(distParts) > 0 {
+		groupId = distParts[0]
+	}
+	if len(distParts) > 1 {
+		artifactId = distParts[1]
+	}
+
+	repoName := metadata.Repo
+	repoParts := strings.Split(repoName, "/")
+	repoShort := ""
+	if len(repoParts) > 0 {
+		repoShort = repoParts[len(repoParts)-1]
+	}
+
+	version := libraryVersion
+
+	minJavaVersion := metadata.MinJavaVersion
+	if minJavaVersion == 0 {
+		minJavaVersion = 8 // Default to Java 8
+	}
+
+	samples, err := ExtractSamples(dir)
+	if err != nil {
+		return fmt.Errorf("failed to extract samples: %w", err)
+	}
+
+	snippets, err := ExtractSnippets(dir)
+	if err != nil {
+		return fmt.Errorf("failed to extract snippets: %w", err)
+	}
+
+	templateMetadata := map[string]interface{}{
+		"Repo":                metadata,
+		"LibraryVersion":      version,
+		"LibrariesBOMVersion": bomVersion,
+		"Samples":             samples,
+		"Snippets":            snippets,
+		"MinJavaVersion":      minJavaVersion,
+	}
+
+	if len(capitalizedPartials) > 0 {
+		templateMetadata["Partials"] = capitalizedPartials
+	}
+
+	data := struct {
+		Metadata          map[string]interface{}
+		GroupID           string
+		ArtifactID        string
+		Version           string
+		RepoShort         string
+		MigratedSplitRepo bool
+		Monorepo          bool
+		BOMVersion        string
+		LibraryVersion    string
+	}{
+		Metadata:          templateMetadata,
+		GroupID:           groupId,
+		ArtifactID:        artifactId,
+		Version:           version,
+		RepoShort:         repoShort,
+		MigratedSplitRepo: false,
+		Monorepo:          true,
+		BOMVersion:        bomVersion,
+		LibraryVersion:    libraryVersion,
+	}
+
+	// Execute template
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	// Write output
+	return os.WriteFile(outputPath, []byte(buf.String()), 0644)
 }

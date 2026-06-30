@@ -182,7 +182,7 @@ func TestReplace_Error(t *testing.T) {
 			content:     "Hello World",
 			original:    "Apple",
 			replacement: "Go",
-			wantErr:     errTextNotFound,
+			wantErr:     ErrTextNotFound,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -221,7 +221,7 @@ func TestReplaceRegex_Error(t *testing.T) {
 			content:     "Hello World",
 			pattern:     `\d+`,
 			replacement: "Number",
-			wantErr:     errTextNotFound,
+			wantErr:     ErrTextNotFound,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

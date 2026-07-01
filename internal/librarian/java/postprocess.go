@@ -781,7 +781,7 @@ func runGoPostprocessor(ctx context.Context, p libraryPostProcessParams) error {
 		return fmt.Errorf("cfg.Default.Java is nil")
 	}
 
-	bomVersion, err := findBOMVersion(p.cfg, p.library)
+	bomVersion, err := findBOMVersion(p.cfg)
 	if err != nil {
 		return fmt.Errorf("failed to find BOM version: %w", err)
 	}

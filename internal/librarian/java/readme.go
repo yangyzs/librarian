@@ -17,16 +17,26 @@ package java
 import (
 	"bufio"
 	"bytes"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+	"text/template"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/googleapis/librarian/internal/yaml"
 )
 
 var (
+	//go:embed template/README.md.go.tmpl
+	readmeTmpl        string
+	readmeTmplParsed  = template.Must(template.New("README").Parse(readmeTmpl))
 	openSnippetRegex  = regexp.MustCompile(`\[START ([a-zA-Z0-9_-]+)\]`)
 	closeSnippetRegex = regexp.MustCompile(`\[END ([a-zA-Z0-9_-]+)\]`)
 	openExcludeRegex  = regexp.MustCompile(`\[START_EXCLUDE\]`)
@@ -49,12 +59,84 @@ var (
 
 	// errEmptyFile indicates an empty file path was provided.
 	errEmptyFile = errors.New("file cannot be empty")
+
+	// errNilMetadata indicates a nil repoMetadata pointer was provided.
+	errNilMetadata = errors.New("metadata cannot be nil")
 )
 
 // codeSample represents a discovered Java code sample along with its derived title.
 type codeSample struct {
 	Title string
 	File  string
+}
+
+// readmeData represents the top-level template execution context passed to README.md.go.tmpl.
+type readmeData struct {
+	Metadata          map[string]interface{} // Contains Repo, LibraryVersion, Samples, Snippets, Partials.
+	GroupID           string                 // Maven Group ID (e.g. com.google.cloud), required for Maven/Gradle dependency blocks.
+	ArtifactID        string                 // Maven Artifact ID (e.g. google-cloud-storage), required for dependency blocks.
+	Version           string                 // Current library version.
+	RepoShort         string                 // Short repository name used in GitHub archive migration notices.
+	MigratedSplitRepo bool                   // Flag indicating if repository moved to monorepo.
+	Monorepo          bool                   // Flag indicating if library is part of google-cloud-java monorepo.
+	BOMVersion        string                 // Version of libraries-bom for dependencyManagement block.
+}
+
+// renderREADME generates README.md in dir using the embedded Markdown template.
+// It injects repository metadata, versions, samples, and snippets, skipping rendering if protected by keepSet.
+func renderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion string, keepSet map[string]bool) error {
+	if dir == "" {
+		return errEmptyDir
+	}
+	if metadata == nil {
+		return errNilMetadata
+	}
+	if keepSet["README.md"] {
+		return nil
+	}
+	partials, err := loadReadmePartials(dir)
+	if err != nil {
+		return err
+	}
+	groupID, artifactID := parseGroupIDArtifactID(metadata.DistributionName)
+	repoShort := parseRepoShortName(metadata.Repo)
+	minJavaVersion := metadata.MinJavaVersion
+	if minJavaVersion == 0 {
+		minJavaVersion = 8
+	}
+	samples, err := extractSamples(dir)
+	if err != nil {
+		return fmt.Errorf("failed to extract samples: %w", err)
+	}
+	snippets, err := extractSnippets(dir)
+	if err != nil {
+		return fmt.Errorf("failed to extract snippets: %w", err)
+	}
+	templateMetadata := map[string]interface{}{
+		"Repo":           metadata,
+		"Samples":        samples,
+		"Snippets":       snippets,
+		"MinJavaVersion": minJavaVersion,
+	}
+	if len(partials) > 0 {
+		templateMetadata["Partials"] = partials
+	}
+	data := readmeData{
+		Metadata:          templateMetadata,
+		GroupID:           groupID,
+		ArtifactID:        artifactID,
+		Version:           libraryVersion,
+		RepoShort:         repoShort,
+		MigratedSplitRepo: false,
+		Monorepo:          true,
+		BOMVersion:        bomVersion,
+	}
+	var buf strings.Builder
+	if err := readmeTmplParsed.Execute(&buf, data); err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+	outputPath := filepath.Join(dir, "README.md")
+	return os.WriteFile(outputPath, []byte(buf.String()), 0644)
 }
 
 // extractSamples locates production Java sample files and returns parsed codeSample structs
@@ -235,10 +317,9 @@ func extractSnippetsFromFile(file string) (map[string][]string, error) {
 	scanner := bufio.NewScanner(f)
 	// 10 MB sanity limit to protect system memory.
 	scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
-	// Scan through file line by line and capture all open snippets.
-	// More than one open block might exist for a given line, so we
-	// need openSnippets to track currently active snippet blocks by name
+	// snippetLines maps snippet names to their captured code lines.
 	snippetLines := make(map[string][]string)
+	// openSnippets tracks currently active snippet blocks by name, allowing nested or overlapping blocks.
 	openSnippets := make(map[string]bool)
 	excluding := false
 	for scanner.Scan() {
@@ -255,6 +336,7 @@ func extractSnippetsFromFile(file string) (map[string][]string, error) {
 		if excluding {
 			continue
 		}
+
 		// Check for snippet start/end tags. Tag lines themselves are not saved.
 		openMatch := openSnippetRegex.FindStringSubmatch(line)
 		closeMatch := closeSnippetRegex.FindStringSubmatch(line)
@@ -270,6 +352,7 @@ func extractSnippetsFromFile(file string) (map[string][]string, error) {
 			delete(openSnippets, closeMatch[1])
 			continue
 		}
+
 		// Append this line of code to every snippet block currently open.
 		for s := range openSnippets {
 			snippetLines[s] = append(snippetLines[s], line)
@@ -279,4 +362,143 @@ func extractSnippetsFromFile(file string) (map[string][]string, error) {
 		return nil, fmt.Errorf("failed scanning file %s: %w", file, err)
 	}
 	return snippetLines, nil
+}
+
+// minLeadingSpaces finds the minimum number of leading spaces across non-empty lines.
+func minLeadingSpaces(lines []string) int {
+	if len(lines) == 0 {
+		return 0
+	}
+	minSpaces := -1
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		spaces := len(line) - len(strings.TrimLeft(line, " "))
+		if minSpaces == -1 || spaces < minSpaces {
+			minSpaces = spaces
+		}
+	}
+	if minSpaces == -1 {
+		return 0
+	}
+	return minSpaces
+}
+
+// trimLeadingWhitespace computes minimum leading space indentation and trims it.
+func trimLeadingWhitespace(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	minSpaces := minLeadingSpaces(lines)
+	var sb strings.Builder
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			sb.WriteString("\n")
+			continue
+		}
+		sb.WriteString(line[minSpaces:])
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// extractSnippets recursively aggregates tagged code snippets across all Java and XML files in dir/samples.
+func extractSnippets(dir string) (map[string]string, error) {
+	if dir == "" {
+		return nil, errEmptyDir
+	}
+	files, err := collectSnippetFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+	sort.Strings(files)
+	snippetLines := make(map[string][]string)
+	for _, file := range files {
+		fileSnippets, err := extractSnippetsFromFile(file)
+		if err != nil {
+			return nil, err
+		}
+		for name, lines := range fileSnippets {
+			snippetLines[name] = append(snippetLines[name], lines...)
+		}
+	}
+	if len(snippetLines) == 0 {
+		return nil, nil
+	}
+	result := make(map[string]string, len(snippetLines))
+	for snippet, lines := range snippetLines {
+		result[snippet] = trimLeadingWhitespace(lines)
+	}
+	return result, nil
+}
+
+// loadReadmePartials loads and camel-cases README partials from .readme-partials.yaml or .yml.
+func loadReadmePartials(dir string) (map[string]interface{}, error) {
+	if dir == "" {
+		return nil, errEmptyDir
+	}
+	partialsBytes, err := os.ReadFile(filepath.Join(dir, ".readme-partials.yaml"))
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("failed to read partials file: %w", err)
+		}
+		partialsBytes, err = os.ReadFile(filepath.Join(dir, ".readme-partials.yml"))
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("failed to read partials file: %w", err)
+		}
+	}
+	if len(partialsBytes) == 0 {
+		return nil, nil
+	}
+	rawPartials, err := yaml.Unmarshal[map[string]interface{}](partialsBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal partials: %w", err)
+	}
+	if rawPartials == nil || len(*rawPartials) == 0 {
+		return nil, nil
+	}
+	result := make(map[string]interface{}, len(*rawPartials))
+	for k, v := range *rawPartials {
+		result[toCamelCase(k)] = v
+	}
+	return result, nil
+}
+
+// toCamelCase converts snake_case, kebab-case, or space-separated strings into CamelCase identifiers.
+func toCamelCase(s string) string {
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == '_' || r == '-' || r == ' '
+	})
+	var sb strings.Builder
+	for _, p := range parts {
+		// Decode and capitalize the first rune, then append the remaining subslice without copying.
+		r, size := utf8.DecodeRuneInString(p)
+		sb.WriteRune(unicode.ToUpper(r))
+		sb.WriteString(p[size:])
+	}
+	return sb.String()
+}
+
+// parseGroupIDArtifactID extracts GroupID and ArtifactID from a Maven distribution name.
+func parseGroupIDArtifactID(distributionName string) (string, string) {
+	groupID, artifactID, _ := strings.Cut(distributionName, ":")
+	return groupID, artifactID
+}
+
+// parseRepoShortName extracts the short repository name from the full repo path.
+func parseRepoShortName(repo string) string {
+	if repo == "" {
+		return ""
+	}
+	if i := strings.LastIndexByte(repo, '/'); i >= 0 {
+		return repo[i+1:]
+	}
+	return repo
 }

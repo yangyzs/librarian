@@ -129,6 +129,50 @@ This document describes the schema for the librarian.yaml.
 | `python` | [PythonPackage](#pythonpackage-configuration) (optional) | Contains Python-specific library configuration. |
 | `rust` | [RustCrate](#rustcrate-configuration) (optional) | Contains Rust-specific library configuration. |
 | `swift` | [SwiftPackage](#swiftpackage-configuration) (optional) | Contains Swift-specific library configuration. |
+| `postprocess` | [Postprocess](#postprocess-configuration) (optional) | Contains post-processing operations (copies, removes, replacements) that are executed after code generation. |
+
+## Postprocess Configuration
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `replace` | list of [ReplaceConfig](#replaceconfig-configuration) |  |
+| `replace_regex` | list of [ReplaceRegexConfig](#replaceregexconfig-configuration) |  |
+| `copy_file` | list of [CopyConfig](#copyconfig-configuration) |  |
+| `remove_file` | list of string |  |
+| `method_operations` | list of [MethodOperation](#methodoperation-configuration) |  |
+
+## MethodOperation Configuration
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `path` | string |  |
+| `action` | string |  |
+| `func_name` | string |  |
+| `new_name` | string |  |
+| `deprecation_message` | string |  |
+
+## ReplaceConfig Configuration
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `path` | string |  |
+| `original` | string |  |
+| `replacement` | string |  |
+
+## ReplaceRegexConfig Configuration
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `path` | string |  |
+| `pattern` | string |  |
+| `replacement` | string |  |
+
+## CopyConfig Configuration
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `src` | string |  |
+| `dst` | string |  |
 
 ## API Configuration
 

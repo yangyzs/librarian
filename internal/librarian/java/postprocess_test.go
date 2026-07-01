@@ -51,6 +51,9 @@ func TestPostProcessAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := os.WriteFile(filepath.Join(outdir, "owlbot.py"), []byte("#!/usr/bin/env python3\npass"), 0755); err != nil {
+		t.Fatal(err)
+	}
 	content := "package com.google.cloud.secretmanager.v1;"
 	grpcFile := filepath.Join(gRPCDir, "GRPCFile.java")
 	if err := os.WriteFile(grpcFile, []byte(content), 0644); err != nil {
@@ -196,9 +199,13 @@ func TestRestructureModules(t *testing.T) {
 	if err := os.WriteFile(reflectConfigPath, []byte("{}"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	protoPath := filepath.Join(googleapisDir, "google", "cloud", "secretmanager", "v1", "service.proto")
+	absGoogleapisDir, err := filepath.Abs(googleapisDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protoPath := filepath.Join(absGoogleapisDir, "google", "cloud", "secretmanager", "v1", "service.proto")
 
-	additionalProtoPath := filepath.Join(googleapisDir, "google", "cloud", "oslogin", "common", "common.proto")
+	additionalProtoPath := filepath.Join(absGoogleapisDir, "google", "cloud", "oslogin", "common", "common.proto")
 	params := postProcessParams{
 		outDir: tmpDir,
 		library: &config.Library{
@@ -410,16 +417,76 @@ func TestRestructureModules_Monolithic(t *testing.T) {
 			Monolithic: true,
 		},
 	}
-	destRoot := filepath.Join(tmpDir, "dest", "src")
+	destRoot := filepath.Join(tmpDir, "dest")
 	if err := restructureModules(params, destRoot); err != nil {
 		t.Fatal(err)
 	}
 
-	// Verify all files are in the same src directory
+	// Verify all files are in the same main directory (upstream staging structure)
 	files := []string{
 		filepath.Join(destRoot, "main", "java", "Gapic.java"),
 		filepath.Join(destRoot, "main", "java", "Grpc.java"),
 		filepath.Join(destRoot, "main", "java", "Proto.java"),
+	}
+	for _, f := range files {
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("expected file %s to exist, but it was not found: %v", f, err)
+		}
+	}
+}
+
+func TestRestructureModulesDirect_Monolithic(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	apiBase := "v1"
+	libraryID := "grafeas"
+
+	dirs := []string{
+		filepath.Join(tmpDir, apiBase, "gapic", "src", "main", "java"),
+		filepath.Join(tmpDir, apiBase, "grpc"),
+		filepath.Join(tmpDir, apiBase, "proto"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gapicFile := filepath.Join(tmpDir, apiBase, "gapic", "src", "main", "java", "Gapic.java")
+	if err := os.WriteFile(gapicFile, []byte("public class Gapic {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	grpcFile := filepath.Join(tmpDir, apiBase, "grpc", "Grpc.java")
+	if err := os.WriteFile(grpcFile, []byte("public class Grpc {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	protoFile := filepath.Join(tmpDir, apiBase, "proto", "Proto.java")
+	if err := os.WriteFile(protoFile, []byte("public class Proto {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	params := postProcessParams{
+		outDir: tmpDir,
+		library: &config.Library{
+			Name: libraryID,
+			Java: &config.JavaModule{
+				GroupID: "com.google.cloud",
+			},
+		},
+		apiBase: apiBase,
+
+		includeSamples: false,
+		javaAPI: &config.JavaAPI{
+			Monolithic: true,
+		},
+	}
+	destRoot := filepath.Join(tmpDir, "dest")
+	if err := restructureModulesDirect(params, destRoot, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	files := []string{
+		filepath.Join(destRoot, "src", "main", "java", "Gapic.java"),
+		filepath.Join(destRoot, "src", "main", "java", "Grpc.java"),
+		filepath.Join(destRoot, "src", "main", "java", "Proto.java"),
 	}
 	for _, f := range files {
 		if _, err := os.Stat(f); err != nil {
@@ -1135,5 +1202,284 @@ func TestCreateOrVerifyOwlbotPy_Error(t *testing.T) {
 	err := createOrVerifyOwlbotPy(outDir)
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("error = %v, wantErr %v", err, fs.ErrPermission)
+	}
+}
+
+func TestPostProcessLibrary_Branching(t *testing.T) {
+
+	t.Run("UseGoPostprocessor false", func(t *testing.T) {
+		outDir := t.TempDir()
+		// Create a dummy owlbot.py to avoid failure in createOrVerifyOwlbotPy
+		if err := os.WriteFile(filepath.Join(outDir, "owlbot.py"), []byte(""), 0755); err != nil {
+			t.Fatal(err)
+		}
+		p := libraryPostProcessParams{
+			outDir: outDir,
+			cfg: &config.Config{
+				Libraries: []*config.Library{
+					{Name: "google-cloud-java", Version: "1.2.3"},
+				},
+			},
+			library: &config.Library{
+				Name: "test-library",
+			},
+		}
+		err := postProcessLibrary(t.Context(), p)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if strings.Contains(err.Error(), "postProcessLibraryNew not implemented") {
+			t.Errorf("expected legacy flow, but got new flow error: %v", err)
+		}
+	})
+
+	t.Run("No owlbot script present, no yaml, success", func(t *testing.T) {
+		outDir := t.TempDir()
+
+		if err := os.MkdirAll(filepath.Join(outDir, "owl-bot-staging"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		metadata := `{"repo": {"name_pretty": "My API"}}`
+		if err := os.WriteFile(filepath.Join(outDir, ".repo-metadata.json"), []byte(metadata), 0644); err != nil {
+			t.Fatal(err)
+		}
+		p := libraryPostProcessParams{
+			outDir: outDir,
+			metadata: &repoMetadata{
+				NamePretty: "test-library",
+			},
+			cfg: &config.Config{
+				Default: &config.Default{
+					Java: &config.JavaDefault{
+						LibrariesBOMVersion: "1.0.0",
+					},
+				},
+				Libraries: []*config.Library{
+					{Name: "google-cloud-java", Version: "1.2.3"},
+				},
+			},
+			library: &config.Library{
+				Name:    "test-library",
+				Version: "1.2.3",
+				Java: &config.JavaModule{
+					GroupID:    "com.google.cloud",
+					ArtifactID: "test-library",
+				},
+			},
+		}
+		err := postProcessLibrary(t.Context(), p)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+	})
+
+	t.Run("No owlbot script present, with postprocess config in library", func(t *testing.T) {
+		outDir := t.TempDir()
+
+		if err := os.MkdirAll(filepath.Join(outDir, "owl-bot-staging"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		metadata := `{"repo": {"name_pretty": "My API"}}`
+		if err := os.WriteFile(filepath.Join(outDir, ".repo-metadata.json"), []byte(metadata), 0644); err != nil {
+			t.Fatal(err)
+		}
+		// Write a file to apply replacements on
+		testFile := filepath.Join(outDir, "TestFile.java")
+		if err := os.WriteFile(testFile, []byte("Hello World"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		p := libraryPostProcessParams{
+			outDir: outDir,
+			metadata: &repoMetadata{
+				NamePretty: "test-library",
+			},
+			cfg: &config.Config{
+				Default: &config.Default{
+					Java: &config.JavaDefault{
+						LibrariesBOMVersion: "1.0.0",
+					},
+				},
+				Libraries: []*config.Library{
+					{Name: "google-cloud-java", Version: "1.2.3"},
+				},
+			},
+			library: &config.Library{
+				Name:    "test-library",
+				Version: "1.2.3",
+				Postprocess: &config.Postprocess{
+					Replace: []config.ReplaceConfig{
+						{
+							Path:        "TestFile.java",
+							Original:    "World",
+							Replacement: "Go",
+						},
+					},
+				},
+				Java: &config.JavaModule{
+					GroupID:    "com.google.cloud",
+					ArtifactID: "test-library",
+				},
+			},
+		}
+		err := postProcessLibrary(t.Context(), p)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		// Verify replacement was applied
+		content, err := os.ReadFile(testFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(content) != "Hello Go" {
+			t.Errorf("expected Hello Go, got %q", string(content))
+		}
+	})
+}
+
+func TestRunGoPostprocessor(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Setup structure directly in outDir
+	destDir := filepath.Join(tmpDir, "my-module", "src", "main", "java")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	fileContent := `package com.example;
+public class File {
+	public void oldFunc() {}
+	public void toDelete() {
+		System.out.println("delete me");
+	}
+}`
+	filePath := filepath.Join(destDir, "File.java")
+	if err := os.WriteFile(filePath, []byte(fileContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := libraryPostProcessParams{
+		outDir: tmpDir,
+		cfg: &config.Config{
+			Default: &config.Default{
+				Java: &config.JavaDefault{
+					LibrariesBOMVersion: "1.0.0",
+				},
+			},
+		},
+		library: &config.Library{
+			Version: "1.2.3",
+			Postprocess: &config.Postprocess{
+				Replace: []config.ReplaceConfig{
+					{
+						Path:        "**/File.java",
+						Original:    "oldFunc",
+						Replacement: "newFunc",
+					},
+				},
+				MethodOperations: []config.MethodOperation{
+					{
+						Path:     "**/File.java",
+						Action:   "delete",
+						FuncName: "public void toDelete()",
+					},
+					{
+						Path:     "**/File.java",
+						Action:   "duplicate",
+						FuncName: "public void newFunc()",
+						NewName:  "newFuncCopy",
+					},
+					{
+						Path:               "**/File.java",
+						Action:             "deprecate",
+						FuncName:           "public void newFuncCopy()",
+						DeprecationMessage: "Use newFunc instead.",
+					},
+				},
+			},
+		},
+		metadata: &repoMetadata{
+			NamePretty:       "My API",
+			DistributionName: "com.google.cloud:google-cloud-myapi",
+			Repo:             "googleapis/google-cloud-java",
+		},
+	}
+
+	err := runGoPostprocessor(t.Context(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify File was modified
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sContent := string(content)
+	if !strings.Contains(sContent, "newFunc") {
+		t.Errorf("Replacement was not applied. Content: %s", sContent)
+	}
+	if strings.Contains(sContent, "toDelete") {
+		t.Errorf("Delete function was not applied. Content: %s", sContent)
+	}
+	if !strings.Contains(sContent, "newFuncCopy") {
+		t.Errorf("Duplicate method operation was not applied. Content: %s", sContent)
+	}
+	if !strings.Contains(sContent, "@Deprecated\n\tpublic void newFuncCopy()") {
+		t.Errorf("@Deprecated annotation was not applied correctly. Content: %s", sContent)
+	}
+	if !strings.Contains(sContent, "* @deprecated Use newFunc instead.") {
+		t.Errorf("Javadoc deprecation tag was not applied correctly. Content: %s", sContent)
+	}
+
+	// Verify README was rendered
+	readmePath := filepath.Join(tmpDir, "README.md")
+	if _, err := os.Stat(readmePath); err != nil {
+		t.Errorf("README.md was not rendered: %v", err)
+	}
+	readmeContent, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readmeContent), "# Google My API Client for Java") {
+		t.Errorf("README content mismatch. Got: %s", string(readmeContent))
+	}
+}
+
+func TestRunGoPostprocessor_ReleasedVersion(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	p := libraryPostProcessParams{
+		outDir: tmpDir,
+		cfg: &config.Config{
+			Default: &config.Default{
+				Java: &config.JavaDefault{
+					LibrariesBOMVersion: "1.0.0",
+				},
+			},
+		},
+		library: &config.Library{
+			Version: "3.44.0-SNAPSHOT",
+			Java: &config.JavaModule{
+				ReleasedVersion: "3.43.1",
+			},
+		},
+		metadata: &repoMetadata{
+			NamePretty: "My API",
+		},
+	}
+
+	if err := runGoPostprocessor(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+
+	readmePath := filepath.Join(tmpDir, "README.md")
+	readmeContent, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readmeContent), "3.43.1") {
+		t.Errorf("README content mismatch. Got: %s", string(readmeContent))
 	}
 }

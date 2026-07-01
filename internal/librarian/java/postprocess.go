@@ -25,10 +25,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/googleapis/librarian/internal/command"
 	"github.com/googleapis/librarian/internal/config"
 	"github.com/googleapis/librarian/internal/filesystem"
 	"github.com/googleapis/librarian/internal/license"
+	"github.com/googleapis/librarian/internal/postprocessing"
 	"github.com/googleapis/librarian/internal/serviceconfig"
 )
 
@@ -67,7 +69,30 @@ type libraryPostProcessParams struct {
 	transports map[string]serviceconfig.Transport
 }
 
+func isGoPostprocessor(outDir string) (bool, error) {
+	owlbotPath := filepath.Join(outDir, "owlbot.py")
+	_, err := os.Stat(owlbotPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return true, nil
+	}
+	if err == nil {
+		return false, nil
+	}
+	return false, fmt.Errorf("failed to stat owlbot script: %w", err)
+}
+
 func postProcessLibrary(ctx context.Context, params libraryPostProcessParams) error {
+	useGo, err := isGoPostprocessor(params.outDir)
+	if err != nil {
+		return err
+	}
+	if useGo {
+		return runGoPostprocessor(ctx, params)
+	}
+	return runLegacyPythonPostprocessor(ctx, params)
+}
+
+func runLegacyPythonPostprocessor(ctx context.Context, params libraryPostProcessParams) error {
 	if err := createOrVerifyOwlbotPy(params.outDir); err != nil {
 		return err
 	}
@@ -125,6 +150,36 @@ func postProcessAPI(ctx context.Context, params postProcessParams) error {
 	if err := copyFiles(params); err != nil {
 		return fmt.Errorf("failed to copy files: %w", err)
 	}
+	coords := params.coords()
+
+	useGo, err := isGoPostprocessor(params.outDir)
+	if err != nil {
+		return err
+	}
+	if useGo {
+		keepSet := toKeepSet(params.library.Keep)
+		if err := restructureModulesDirect(params, params.outDir, keepSet); err != nil {
+			return fmt.Errorf("failed to restructure direct to outDir: %w", err)
+		}
+
+		protoModuleRepoRoot := filepath.Join(params.outDir, coords.Proto.ArtifactID)
+		shouldGenerate, err := clirrIgnoreShouldGenerate(coords.Proto.ArtifactID, protoModuleRepoRoot, params.javaAPI.Monolithic)
+		if err != nil {
+			return fmt.Errorf("failed to check for clirr ignore file: %w", err)
+		}
+		if shouldGenerate {
+			if err := generateClirrIgnore(protoModuleRepoRoot); err != nil {
+				return fmt.Errorf("failed to generate clirr ignore file: %w", err)
+			}
+		}
+
+		// Cleanup intermediate protoc output directory
+		if err := os.RemoveAll(filepath.Join(params.outDir, params.apiBase)); err != nil {
+			return fmt.Errorf("failed to cleanup intermediate files: %w", err)
+		}
+		return nil
+	}
+
 	if err := restructureToStaging(params); err != nil {
 		return fmt.Errorf("failed to restructure to staging: %w", err)
 	}
@@ -132,7 +187,6 @@ func postProcessAPI(ctx context.Context, params postProcessParams) error {
 	// Generate clirr-ignored-differences.xml for the proto module.
 	// We target the staging directory because runOwlBot hasn't moved the files
 	// to their final destination yet.
-	coords := params.coords()
 	protoModuleRepoRoot := filepath.Join(params.outDir, coords.Proto.ArtifactID)
 	shouldGenerate, err := clirrIgnoreShouldGenerate(coords.Proto.ArtifactID, protoModuleRepoRoot, params.javaAPI.Monolithic)
 	if err != nil {
@@ -370,6 +424,112 @@ func restructureModules(params postProcessParams, destRoot string) error {
 	return nil
 }
 
+func restructureModulesDirect(params postProcessParams, destRoot string, keepSet map[string]bool) error {
+	coords := params.coords()
+	tempProtoSrcDir := params.protoDir()
+	if params.library.Name != commonProtosLibrary {
+		if err := removeConflictingFiles(tempProtoSrcDir); err != nil {
+			return err
+		}
+	}
+
+	protoDest := filepath.Join(destRoot, coords.Proto.ArtifactID, "src", "main", "java")
+	grpcDest := filepath.Join(destRoot, coords.GRPC.ArtifactID, "src", "main", "java")
+	gapicMainDest := filepath.Join(destRoot, coords.GAPIC.ArtifactID, "src", "main")
+	gapicTestDest := filepath.Join(destRoot, coords.GAPIC.ArtifactID, "src", "test")
+	protoFilesDestDir := filepath.Join(destRoot, coords.Proto.ArtifactID, "src", "main", "proto")
+
+	if params.javaAPI.Monolithic {
+		protoDest = filepath.Join(destRoot, "src", "main", "java")
+		grpcDest = filepath.Join(destRoot, "src", "main", "java")
+		gapicMainDest = filepath.Join(destRoot, "src", "main")
+		gapicTestDest = filepath.Join(destRoot, "src", "test")
+		protoFilesDestDir = filepath.Join(destRoot, "src", "main", "proto")
+	}
+
+	var actions []moveAction
+	if shouldGenerateProto(params.javaAPI) {
+		actions = append(actions, moveAction{
+			src:         tempProtoSrcDir,
+			dest:        protoDest,
+			description: "proto source",
+		})
+	}
+	if shouldGenerateGRPC(params.javaAPI) {
+		actions = append(actions, moveAction{
+			src:         params.gRPCDir(),
+			dest:        grpcDest,
+			description: "grpc source",
+		})
+	}
+	if shouldGenerateGAPIC(params.javaAPI) {
+		actions = append(actions, []moveAction{
+			{
+				src:         filepath.Join(params.gapicDir(), "src", "main"),
+				dest:        gapicMainDest,
+				description: "gapic source",
+			},
+			{
+				src:         filepath.Join(params.gapicDir(), "src", "test"),
+				dest:        gapicTestDest,
+				description: "gapic test",
+			},
+		}...)
+	}
+	if shouldGenerateResourceNames(params.javaAPI) {
+		actions = append(actions, moveAction{
+			src:         filepath.Join(params.gapicDir(), "proto", "src", "main", "java"),
+			dest:        protoDest,
+			description: "resource name source",
+		})
+	}
+	if params.includeSamples && shouldGenerateGAPIC(params.javaAPI) {
+		actions = append(actions, moveAction{
+			src:         filepath.Join(params.gapicDir(), "samples", "snippets", "generated", "src", "main", "java"),
+			dest:        filepath.Join(destRoot, "samples", "snippets", "generated"),
+			description: "samples",
+		})
+	}
+	if err := restructureDirect(actions, keepSet, destRoot); err != nil {
+		return err
+	}
+	if shouldGenerateProto(params.javaAPI) {
+		if err := copyProtos(params.protosToCopy, protoFilesDestDir); err != nil {
+			return fmt.Errorf("failed to copy proto files: %w", err)
+		}
+	}
+	return nil
+}
+
+func restructureDirect(actions []moveAction, keepSet map[string]bool, libraryRoot string) error {
+	for _, action := range actions {
+		if _, err := os.Stat(action.src); err == nil {
+			if err := os.MkdirAll(action.dest, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", action.dest, err)
+			}
+			keepFunc := func(p string) bool {
+				if shouldPreserve(p, keepSet) {
+					return true
+				}
+				destPath := filepath.Join(libraryRoot, p)
+				if _, err := os.Stat(destPath); err == nil {
+					if filepath.Ext(destPath) == ".java" {
+						isGen, err := hasMarker(destPath)
+						if err == nil && !isGen {
+							return true
+						}
+					}
+				}
+				return false
+			}
+			if err := filesystem.MoveAndMergeWithKeep(action.src, action.dest, libraryRoot, keepFunc); err != nil {
+				return fmt.Errorf("failed to move with keep %s: %w", action.description, err)
+			}
+		}
+	}
+	return nil
+}
+
 // runOwlBot executes the owlbot.py script located in outDir to restructure the
 // generated code and apply templates (e.g., for README.md).
 //
@@ -420,6 +580,15 @@ func copyProtos(protos []protoFileToCopy, destDir string) error {
 		}
 	}
 	return nil
+}
+
+func toKeepSet(keep []string) map[string]bool {
+	keepSet := make(map[string]bool, len(keep))
+	for _, k := range keep {
+		normalized := strings.TrimSuffix(filepath.ToSlash(k), "/")
+		keepSet[normalized] = true
+	}
+	return keepSet
 }
 
 // removeKeptFilesFromStaging removes files and directories from the staging area
@@ -501,6 +670,155 @@ func createOrVerifyOwlbotPy(outDir string) (err error) {
 	}()
 	if executeErr := templates.ExecuteTemplate(file, "owlbot_py.tmpl", nil); executeErr != nil {
 		return fmt.Errorf("failed to write owlbot.py template: %w", executeErr)
+	}
+	return nil
+}
+
+func runGoPostprocessor(ctx context.Context, p libraryPostProcessParams) error {
+	keepSet := toKeepSet(p.library.Keep)
+
+	// 1. Load postprocess configuration and apply operations
+	if p.library.Postprocess != nil {
+		if err := postprocessing.Validate(p.library.Postprocess); err != nil {
+			return fmt.Errorf("invalid postprocess config: %w", err)
+		}
+		cfg := p.library.Postprocess
+
+		// 1. Apply Copies
+		for _, c := range cfg.CopyFile {
+			if keepSet[filepath.ToSlash(c.Dst)] {
+				continue
+			}
+			srcAbs := filepath.Join(p.outDir, c.Src)
+			dstAbs := filepath.Join(p.outDir, c.Dst)
+			if err := filesystem.CopyFile(srcAbs, dstAbs); err != nil {
+				return fmt.Errorf("failed to copy file from %s to %s: %w", c.Src, c.Dst, err)
+			}
+		}
+
+		// 2. Apply Removes
+		for _, rem := range cfg.RemoveFile {
+			if err := applyToFiles(p.outDir, rem, func(file string) error {
+				if err := postprocessing.RemoveFile(file); err != nil {
+					return fmt.Errorf("failed to remove file %s: %w", file, err)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+
+		// 3. Apply Replacements
+		for _, r := range cfg.Replace {
+			if err := applyToFiles(p.outDir, r.Path, func(file string) error {
+				if err := postprocessing.Replace(file, r.Original, r.Replacement); err != nil {
+					return fmt.Errorf("failed to apply replacement in %s: %w", file, err)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+
+		// 4. Apply Regex Replacements
+		for _, r := range cfg.ReplaceRegex {
+			if err := applyToFiles(p.outDir, r.Path, func(file string) error {
+				if err := postprocessing.ReplaceRegex(file, r.Pattern, r.Replacement); err != nil {
+					return fmt.Errorf("failed to apply regex replacement in %s: %w", file, err)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+
+		// 5. Apply Method Operations
+		for _, mo := range cfg.MethodOperations {
+			if err := applyToFiles(p.outDir, mo.Path, func(file string) error {
+				switch mo.Action {
+				case "delete":
+					if err := postprocessing.DeleteMethod(file, mo.FuncName, "java"); err != nil {
+						return fmt.Errorf("failed to delete method %q in %s: %w", mo.FuncName, file, err)
+					}
+				case "duplicate":
+					if err := postprocessing.DuplicateMethod(ctx, file, mo.FuncName, mo.NewName, "java"); err != nil {
+						return fmt.Errorf("failed to duplicate method %q in %s: %w", mo.FuncName, file, err)
+					}
+				case "deprecate":
+					if err := postprocessing.DeprecateMethod(file, mo.FuncName, mo.DeprecationMessage, "java"); err != nil {
+						return fmt.Errorf("failed to deprecate method %q in %s: %w", mo.FuncName, file, err)
+					}
+				default:
+					return fmt.Errorf("unsupported method operation action %q", mo.Action)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
+	// 6. Render README.md
+	var libraryVersion string
+	if p.library.Java != nil && p.library.Java.ReleasedVersion != "" {
+		libraryVersion = p.library.Java.ReleasedVersion
+	} else {
+		var err error
+		libraryVersion, err = deriveLastReleasedVersion(p.library.Version)
+		if err != nil {
+			return fmt.Errorf("failed to derive library version: %w", err)
+		}
+	}
+
+	if p.cfg == nil {
+		return fmt.Errorf("cfg is nil")
+	}
+	if p.cfg.Default == nil {
+		return fmt.Errorf("cfg.Default is nil")
+	}
+	if p.cfg.Default.Java == nil {
+		return fmt.Errorf("cfg.Default.Java is nil")
+	}
+
+	bomVersion, err := findBOMVersion(p.cfg)
+	if err != nil {
+		return fmt.Errorf("failed to find BOM version: %w", err)
+	}
+
+	if err := renderREADME(p.outDir, p.metadata, bomVersion, libraryVersion, keepSet); err != nil {
+		return fmt.Errorf("failed to render README: %w", err)
+	}
+
+	return nil
+}
+
+func resolveGlobs(outDir, pathPattern string) ([]string, error) {
+	if strings.ContainsAny(pathPattern, "*?[]{}") {
+		return doublestar.FilepathGlob(filepath.Join(outDir, pathPattern))
+	}
+	return []string{filepath.Join(outDir, pathPattern)}, nil
+}
+
+func applyToFiles(outDir string, pathPattern string, action func(string) error) error {
+	files, err := resolveGlobs(outDir, pathPattern)
+	if err != nil {
+		return fmt.Errorf("failed to resolve glob for %s: %w", pathPattern, err)
+	}
+	isGlob := strings.ContainsAny(pathPattern, "*?[]{}")
+	var replacedAny bool
+	var lastTextNotFoundErr error
+	for _, file := range files {
+		if err := action(file); err != nil {
+			if isGlob && errors.Is(err, postprocessing.ErrTextNotFound) {
+				lastTextNotFoundErr = err
+				continue
+			}
+			return err
+		}
+		replacedAny = true
+	}
+	if isGlob && len(files) > 0 && !replacedAny {
+		return lastTextNotFoundErr
 	}
 	return nil
 }

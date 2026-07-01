@@ -343,6 +343,7 @@ This document describes the schema for the librarian.yaml.
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
+| `custom_group_ids` | map[string]string | Maps API path prefixes (e.g., "google/shopping") to their corresponding Maven Group IDs (e.g., "com.google.shopping"). Use this to override the default "com.google.cloud" Group ID for specific API paths (e.g., maps, ads, shopping). |
 | `libraries_bom_version` | string | Is the version of the libraries-bom to use for Java. |
 
 ## JavaFileCopy Configuration
@@ -369,7 +370,6 @@ This document describes the schema for the librarian.yaml.
 | `extra_versioned_modules` | string | Is a list of extra versioned modules. |
 | `group_id` | string | Is the Maven group ID, defaults to "com.google.cloud". |
 | `issue_tracker_override` | string | Allows the "issue_tracker" field in .repo-metadata.json to be overridden. |
-| `libraries_bom_version` | string | Is the version of the libraries-bom to use for Java. |
 | `released_version` | string | Is the last released version of the library. If omitted, it will be derived from the library version. Note: It assumes a minor bump from the previous '.0' version (e.g., '1.2.0-SNAPSHOT' -> '1.1.0') and does not support deriving previous patch releases (e.g., '1.1.1'). |
 | `library_type_override` | string | Allows the "library_type" field in .repo-metadata.json to be overridden. |
 | `min_java_version` | int | Is the minimum Java version required. |
@@ -408,6 +408,8 @@ This document describes the schema for the librarian.yaml.
 | `nodejs_apis` | list of [NodejsAPI](#nodejsapi-configuration) (optional) | Is a list of Node.js-specific API configurations. |
 | `package_name` | string | Is the npm package name (e.g., "@google-cloud/access-approval"). |
 | `client_documentation_override` | string | Allows the client_documentation field in .repo-metadata.json to be overridden from the default that's inferred. |
+| `metadata_name_override` | string | Allows the name field in .repo-metadata.json to be overridden. |
+| `name_pretty_override` | string | Allows the name_pretty field in .repo-metadata.json to be overridden. |
 
 ## PythonDefault Configuration
 

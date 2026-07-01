@@ -96,7 +96,7 @@ func runLegacyPythonPostprocessor(ctx context.Context, params libraryPostProcess
 	if err := createOrVerifyOwlbotPy(params.outDir); err != nil {
 		return err
 	}
-	bomVersion, err := findBOMVersion(params.cfg, params.library)
+	bomVersion, err := findBOMVersion(params.cfg)
 	if err != nil {
 		return err
 	}

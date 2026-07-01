@@ -53,7 +53,7 @@ var (
 	// errEmptyTitle indicates the extracted title value is empty.
 	errEmptyTitle = errors.New("title value cannot be empty")
 
-	// errEmptyDir indicates an empty directory string was provided.
+	// errEmptyDir indicates the provided directory path is empty.
 	errEmptyDir = errors.New("dir cannot be empty")
 
 	// errEmptyFile indicates an empty file path was provided.
@@ -138,8 +138,8 @@ func renderREADME(dir string, metadata *repoMetadata, bomVersion, libraryVersion
 	return os.WriteFile(outputPath, []byte(buf.String()), 0644)
 }
 
-// extractSamples locates standard Java example files under the "samples" directory.
-// It returns a codeSample struct containing the display title and relative path of each sample for README rendering.
+// extractSamples locates production Java sample files and returns parsed codeSample structs
+// containing display titles and relative paths for README rendering.
 func extractSamples(dir string) ([]codeSample, error) {
 	if dir == "" {
 		return nil, errEmptyDir
@@ -297,6 +297,7 @@ func collectSnippetFiles(dir string) ([]string, error) {
 			return err
 		}
 		if d.IsDir() {
+			// Skip unit test directories and generated snippet output directories.
 			if d.Name() == "test" || (d.Name() == "generated" && filepath.Base(filepath.Dir(path)) == "snippets") {
 				return filepath.SkipDir
 			}
@@ -305,6 +306,7 @@ func collectSnippetFiles(dir string) ([]string, error) {
 		if !d.Type().IsRegular() {
 			return nil
 		}
+		// Include .xml files since non-POM configs (e.g., logback.xml) also contain snippets.
 		ext := filepath.Ext(path)
 		if ext == ".java" || ext == ".xml" {
 			files = append(files, path)
@@ -318,8 +320,24 @@ func collectSnippetFiles(dir string) ([]string, error) {
 }
 
 // extractSnippetsFromFile parses a single file to return a map of tagged code snippets.
-// Reads code between START and END markers while omitting EXCLUDE blocks.
-// START and END markers must be named (e.g. [START <name>]).
+// Code between [START <name>] and [END <name>] tags is captured line by line.
+// Any code inside [START_EXCLUDE] and [END_EXCLUDE] blocks is omitted.
+// Example:
+//
+//	Input file content:
+//	  // [START my_snippet]
+//	  void run() {
+//	    // [START_EXCLUDE]
+//	    secretInit();
+//	    // [END_EXCLUDE]
+//	    doWork();
+//	  }
+//	  // [END my_snippet]
+//
+//	Resulting map entry for "my_snippet":
+//	  void run() {
+//	    doWork();
+//	  }
 func extractSnippetsFromFile(file string) (map[string][]string, error) {
 	if file == "" {
 		return nil, errEmptyFile
@@ -334,12 +352,13 @@ func extractSnippetsFromFile(file string) (map[string][]string, error) {
 	scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
 	// Scan through file line by line and capture all open snippets.
 	// More than one open block might exist for a given line, so we
-	// need to track open snippets in a map.
+	// need openSnippets to track currently active snippet blocks by name
 	snippetLines := make(map[string][]string)
 	openSnippets := make(map[string]bool)
 	excluding := false
 	for scanner.Scan() {
 		line := scanner.Text()
+		// Check for exclusion blocks first; code within EXCLUDE tags is completely skipped.
 		if openExcludeRegex.MatchString(line) {
 			excluding = true
 			continue
@@ -351,13 +370,14 @@ func extractSnippetsFromFile(file string) (map[string][]string, error) {
 		if excluding {
 			continue
 		}
+		// Check for snippet start/end tags. Tag lines themselves are not saved.
 		openMatch := openSnippetRegex.FindStringSubmatch(line)
 		closeMatch := closeSnippetRegex.FindStringSubmatch(line)
 		if len(openMatch) > 1 {
 			name := openMatch[1]
 			openSnippets[name] = true
 			if _, exists := snippetLines[name]; !exists {
-				snippetLines[name] = []string{}
+				snippetLines[name] = nil
 			}
 			continue
 		}
@@ -365,6 +385,7 @@ func extractSnippetsFromFile(file string) (map[string][]string, error) {
 			delete(openSnippets, closeMatch[1])
 			continue
 		}
+		// Append this line of code to every snippet block currently open.
 		for s := range openSnippets {
 			snippetLines[s] = append(snippetLines[s], line)
 		}

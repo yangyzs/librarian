@@ -28,6 +28,7 @@ import (
 	"strings"
 	"text/template"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/googleapis/librarian/internal/yaml"
 )
@@ -71,7 +72,7 @@ type codeSample struct {
 
 // readmeData represents the top-level template execution context passed to README.md.go.tmpl.
 type readmeData struct {
-	Metadata          map[string]interface{} // Contains Repo, LibraryVersion, Samples, Snippets, Partials. // TODO delete these comments for readmeData
+	Metadata          map[string]interface{} // Contains Repo, LibraryVersion, Samples, Snippets, Partials.
 	GroupID           string                 // Maven Group ID (e.g. com.google.cloud), required for Maven/Gradle dependency blocks.
 	ArtifactID        string                 // Maven Artifact ID (e.g. google-cloud-storage), required for dependency blocks.
 	Version           string                 // Current library version.
@@ -248,40 +249,6 @@ func extractTitle(filePath string) (string, error) {
 	return title, nil
 }
 
-// extractSnippets walks the "samples" directory locating *.java and *.xml files.
-// It line-scans for START and END tags while supporting START_EXCLUDE blocks.
-func extractSnippets(dir string) (map[string]string, error) {
-	if dir == "" {
-		return nil, errEmptyDir
-	}
-	files, err := collectSnippetFiles(dir)
-	if err != nil {
-		return nil, err
-	}
-	if len(files) == 0 {
-		return nil, nil
-	}
-	sort.Strings(files) // TODO: check- do we need this? check the legacy owlbot and see if we sort the files?
-	snippetLines := make(map[string][]string)
-	for _, file := range files {
-		fileSnippets, err := extractSnippetsFromFile(file)
-		if err != nil {
-			return nil, err
-		}
-		for name, lines := range fileSnippets {
-			snippetLines[name] = append(snippetLines[name], lines...)
-		}
-	}
-	if len(snippetLines) == 0 {
-		return nil, nil
-	}
-	result := make(map[string]string)
-	for snippet, lines := range snippetLines {
-		result[snippet] = trimLeadingWhitespace(lines)
-	}
-	return result, nil
-}
-
 // collectSnippetFiles recursively scans dir/samples for Java and XML files containing snippets.
 func collectSnippetFiles(dir string) ([]string, error) {
 	samplesDir := filepath.Join(dir, "samples")
@@ -350,10 +317,9 @@ func extractSnippetsFromFile(file string) (map[string][]string, error) {
 	scanner := bufio.NewScanner(f)
 	// 10 MB sanity limit to protect system memory.
 	scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
-	// Scan through file line by line and capture all open snippets.
-	// More than one open block might exist for a given line, so we
-	// need openSnippets to track currently active snippet blocks by name
+	// snippetLines maps snippet names to their captured code lines.
 	snippetLines := make(map[string][]string)
+	// openSnippets tracks currently active snippet blocks by name, allowing nested or overlapping blocks.
 	openSnippets := make(map[string]bool)
 	excluding := false
 	for scanner.Scan() {
@@ -370,6 +336,7 @@ func extractSnippetsFromFile(file string) (map[string][]string, error) {
 		if excluding {
 			continue
 		}
+
 		// Check for snippet start/end tags. Tag lines themselves are not saved.
 		openMatch := openSnippetRegex.FindStringSubmatch(line)
 		closeMatch := closeSnippetRegex.FindStringSubmatch(line)
@@ -385,6 +352,7 @@ func extractSnippetsFromFile(file string) (map[string][]string, error) {
 			delete(openSnippets, closeMatch[1])
 			continue
 		}
+
 		// Append this line of code to every snippet block currently open.
 		for s := range openSnippets {
 			snippetLines[s] = append(snippetLines[s], line)
@@ -418,7 +386,6 @@ func minLeadingSpaces(lines []string) int {
 }
 
 // trimLeadingWhitespace computes minimum leading space indentation and trims it.
-// Used to clean up snippet lines so code formatting looks natural in README blocks.
 func trimLeadingWhitespace(lines []string) string {
 	if len(lines) == 0 {
 		return ""
@@ -436,55 +403,85 @@ func trimLeadingWhitespace(lines []string) string {
 	return sb.String()
 }
 
+// extractSnippets recursively aggregates tagged code snippets across all Java and XML files in dir/samples.
+func extractSnippets(dir string) (map[string]string, error) {
+	if dir == "" {
+		return nil, errEmptyDir
+	}
+	files, err := collectSnippetFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+	sort.Strings(files)
+	snippetLines := make(map[string][]string)
+	for _, file := range files {
+		fileSnippets, err := extractSnippetsFromFile(file)
+		if err != nil {
+			return nil, err
+		}
+		for name, lines := range fileSnippets {
+			snippetLines[name] = append(snippetLines[name], lines...)
+		}
+	}
+	if len(snippetLines) == 0 {
+		return nil, nil
+	}
+	result := make(map[string]string, len(snippetLines))
+	for snippet, lines := range snippetLines {
+		result[snippet] = trimLeadingWhitespace(lines)
+	}
+	return result, nil
+}
+
 // loadReadmePartials loads and camel-cases README partials from .readme-partials.yaml or .yml.
 func loadReadmePartials(dir string) (map[string]interface{}, error) {
 	if dir == "" {
 		return nil, errEmptyDir
 	}
-	partialsPath := filepath.Join(dir, ".readme-partials.yaml")
-	if _, err := os.Stat(partialsPath); err != nil {
+	partialsBytes, err := os.ReadFile(filepath.Join(dir, ".readme-partials.yaml"))
+	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("failed to stat partials file: %w", err)
+			return nil, fmt.Errorf("failed to read partials file: %w", err)
 		}
-		partialsPath = filepath.Join(dir, ".readme-partials.yml")
-		if _, err = os.Stat(partialsPath); err != nil {
+		partialsBytes, err = os.ReadFile(filepath.Join(dir, ".readme-partials.yml"))
+		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil, nil
 			}
-			return nil, fmt.Errorf("failed to stat partials file: %w", err)
+			return nil, fmt.Errorf("failed to read partials file: %w", err)
 		}
 	}
-	partialsBytes, err := os.ReadFile(partialsPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read partials file: %w", err)
-	}
-	if partialsBytes == nil {
+	if len(partialsBytes) == 0 {
 		return nil, nil
 	}
 	rawPartials, err := yaml.Unmarshal[map[string]interface{}](partialsBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal partials: %w", err)
 	}
-	result := make(map[string]interface{})
+	if rawPartials == nil || len(*rawPartials) == 0 {
+		return nil, nil
+	}
+	result := make(map[string]interface{}, len(*rawPartials))
 	for k, v := range *rawPartials {
-		// Convert to camel case because jinja templates use snake_case but go template fields should use camelcase.
 		result[toCamelCase(k)] = v
 	}
 	return result, nil
 }
 
-// toCamelCase converts snake_case, kebab-case, or lower word strings to CamelCase.
+// toCamelCase converts snake_case, kebab-case, or space-separated strings into CamelCase identifiers.
 func toCamelCase(s string) string {
 	parts := strings.FieldsFunc(s, func(r rune) bool {
 		return r == '_' || r == '-' || r == ' '
 	})
 	var sb strings.Builder
 	for _, p := range parts {
-		if len(p) > 0 {
-			r := []rune(p)
-			r[0] = unicode.ToUpper(r[0])
-			sb.WriteString(string(r))
-		}
+		// Decode and capitalize the first rune, then append the remaining subslice without copying.
+		r, size := utf8.DecodeRuneInString(p)
+		sb.WriteRune(unicode.ToUpper(r))
+		sb.WriteString(p[size:])
 	}
 	return sb.String()
 }

@@ -33,6 +33,19 @@ import (
 
 const googleapisDir = "../../testdata/googleapis"
 
+// restructuredModulePath returns the base module path for either modern direct or legacy staging mode.
+func restructuredModulePath(t *testing.T, outDir, stagingPrefix, module string) string {
+	t.Helper()
+	useGo, err := isGoPostprocessor(outDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if useGo {
+		return filepath.Join(outDir, module)
+	}
+	return filepath.Join(outDir, "owl-bot-staging", stagingPrefix, module)
+}
+
 func TestResolveGAPICOptions(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -321,9 +334,8 @@ func TestGenerateAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Verify that the output was restructured.
-	// Since postProcessAPI now calls restructureToStaging, we check in staging/v1/...
-	restructuredPath := filepath.Join(outdir, "owl-bot-staging", "v1", "google-cloud-secretmanager", "src", "main", "java")
+	// Verify that the output was restructured in either modern or legacy location.
+	restructuredPath := filepath.Join(restructuredModulePath(t, outdir, "v1", "google-cloud-secretmanager"), "src", "main", "java")
 	if _, err := os.Stat(restructuredPath); err != nil {
 		t.Errorf("expected restructured path %s to exist: %v", restructuredPath, err)
 	}
@@ -385,7 +397,7 @@ func TestGenerateAPI_ProtoOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	restructuredPath := filepath.Join(outdir, "owl-bot-staging", "v1beta", "proto-google-cloud-gkehub-v1beta", "src", "main", "java")
+	restructuredPath := filepath.Join(restructuredModulePath(t, outdir, "v1beta", "proto-google-cloud-gkehub-v1beta"), "src", "main", "java")
 	if _, err := os.Stat(restructuredPath); err != nil {
 		t.Errorf("expected restructured path %s to exist: %v", restructuredPath, err)
 	}
@@ -530,13 +542,14 @@ func TestGenerateAPI_WithAdditionalProtosToGenerateAndCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Verify that the additional proto was generated.
-	generatedJavaPath := filepath.Join(outdir, "owl-bot-staging", "v1", "proto-google-cloud-secretmanager-v1", "src", "main", "java", "com", "google", "cloud", "oslogin", "common", "OsLoginProto.java")
+	// Verify that the additional proto was generated in either modern or legacy location.
+	protoMod := restructuredModulePath(t, outdir, "v1", "proto-google-cloud-secretmanager-v1")
+	generatedJavaPath := filepath.Join(protoMod, "src", "main", "java", "com", "google", "cloud", "oslogin", "common", "OsLoginProto.java")
+	copiedProtoPath := filepath.Join(protoMod, "src", "main", "proto", additionalProto)
 	if _, err := os.Stat(generatedJavaPath); err != nil {
 		t.Errorf("expected generated java file %s to exist: %v", generatedJavaPath, err)
 	}
 	// Verify file copying
-	copiedProtoPath := filepath.Join(outdir, "owl-bot-staging", "v1", "proto-google-cloud-secretmanager-v1", "src", "main", "proto", additionalProto)
 	if _, err := os.Stat(copiedProtoPath); err != nil {
 		t.Errorf("expected copied proto file %s to exist: %v", copiedProtoPath, err)
 	}
@@ -1091,9 +1104,9 @@ func TestGenerateAPI_Gating(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			stagingProtoPath := filepath.Join(outdir, "owl-bot-staging", "v1", "proto-google-cloud-secretmanager-v1", "src", "main", "java")
-			stagingGRPCPath := filepath.Join(outdir, "owl-bot-staging", "v1", "grpc-google-cloud-secretmanager-v1", "src", "main", "java")
-			stagingGAPICPath := filepath.Join(outdir, "owl-bot-staging", "v1", "google-cloud-secretmanager", "src", "main", "java")
+			stagingProtoPath := filepath.Join(restructuredModulePath(t, outdir, "v1", "proto-google-cloud-secretmanager-v1"), "src", "main", "java")
+			stagingGRPCPath := filepath.Join(restructuredModulePath(t, outdir, "v1", "grpc-google-cloud-secretmanager-v1"), "src", "main", "java")
+			stagingGAPICPath := filepath.Join(restructuredModulePath(t, outdir, "v1", "google-cloud-secretmanager"), "src", "main", "java")
 			gotProtoDir := assertDirExists(t, stagingProtoPath, test.wantProtoDir, "proto dir")
 			assertDirExists(t, stagingGRPCPath, test.wantGRPCDir, "grpc dir")
 			assertDirExists(t, stagingGAPICPath, test.wantGAPICDir, "gapic dir")

@@ -148,8 +148,8 @@ To get help, follow the instructions in the [shared Troubleshooting document][tr
 {{ if .Metadata.Repo.Transport }}## Transport
 
 {{ if eq .Metadata.Repo.Transport "grpc" }}{{ .Metadata.Repo.NamePretty }} uses gRPC for the transport layer.
-{{ else if eq .Metadata.Repo.Transport "http" }}{{ .Metadata.Repo.NamePretty }} uses HTTP/JSON for the transport layer.
-{{ else if eq .Metadata.Repo.Transport "both" }}{{ .Metadata.Repo.NamePretty }} uses both gRPC and HTTP/JSON for the transport layer.
+{{ else if or (eq .Metadata.Repo.Transport "http") (eq .Metadata.Repo.Transport "rest") }}{{ .Metadata.Repo.NamePretty }} uses HTTP/JSON for the transport layer.
+{{ else if or (eq .Metadata.Repo.Transport "both") (eq .Metadata.Repo.Transport "grpc+rest") }}{{ .Metadata.Repo.NamePretty }} uses both gRPC and HTTP/JSON for the transport layer.
 {{ end }}
 {{ end }}## Supported Java Versions
 

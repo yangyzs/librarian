@@ -672,3 +672,485 @@ func TestExtractSnippetsFromFile_Error(t *testing.T) {
 		})
 	}
 }
+
+func TestMinLeadingSpaces(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		lines []string
+		want  int
+	}{
+		{
+			name:  "standard indentation",
+			lines: []string{"  int x = 1;", "    int y = 2;"},
+			want:  2,
+		},
+		{
+			name:  "ignores empty and whitespace lines",
+			lines: []string{"", "   ", "    int z = 3;"},
+			want:  4,
+		},
+		{
+			name:  "zero indentation present",
+			lines: []string{"int a = 0;", "  int b = 1;"},
+			want:  0,
+		},
+		{
+			name:  "empty slice",
+			lines: nil,
+			want:  0,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := minLeadingSpaces(test.lines)
+			if got != test.want {
+				t.Errorf("minLeadingSpaces() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestTrimLeadingWhitespace(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{
+			name:  "standard indentation",
+			lines: []string{"  int x = 1;", "    int y = 2;"},
+			want:  "int x = 1;\n  int y = 2;\n",
+		},
+		{
+			name:  "with blank line",
+			lines: []string{"  int x = 1;", "", "  int y = 2;"},
+			want:  "int x = 1;\n\nint y = 2;\n",
+		},
+		{
+			name:  "empty input",
+			lines: nil,
+			want:  "",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := trimLeadingWhitespace(test.lines)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestExtractSnippets(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		setupFiles func(t *testing.T, dir string)
+		want       map[string]string
+	}{
+		{
+			name: "extracts snippets across java and xml files with indentation trimmed",
+			setupFiles: func(t *testing.T, dir string) {
+				samplesDir := filepath.Join(dir, "samples")
+				if err := os.MkdirAll(samplesDir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				pomPath := filepath.Join(samplesDir, "pom.xml")
+				pomContent := `<project>
+  <!-- [START dependency_snippet] -->
+  <dependency>
+    <groupId>com.google.cloud</groupId>
+  </dependency>
+  <!-- [END dependency_snippet] -->
+</project>`
+				if err := os.WriteFile(pomPath, []byte(pomContent), 0644); err != nil {
+					t.Fatal(err)
+				}
+				javaPath := filepath.Join(samplesDir, "Demo.java")
+				javaContent := `public class Demo {
+  // [START quickstart]
+  public void run() {
+    // [START_EXCLUDE]
+    System.out.println("hidden");
+    // [END_EXCLUDE]
+    System.out.println("visible");
+  }
+  // [END quickstart]
+}`
+				if err := os.WriteFile(javaPath, []byte(javaContent), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: map[string]string{
+				"dependency_snippet": "<dependency>\n  <groupId>com.google.cloud</groupId>\n</dependency>\n",
+				"quickstart":         "public void run() {\n  System.out.println(\"visible\");\n}\n",
+			},
+		},
+		{
+			name: "missing samples directory returns nil",
+			setupFiles: func(t *testing.T, dir string) {
+				// No samples dir.
+			},
+			want: nil,
+		},
+		{
+			name: "no snippet tags in java files returns nil",
+			setupFiles: func(t *testing.T, dir string) {
+				samplesDir := filepath.Join(dir, "samples")
+				if err := os.MkdirAll(samplesDir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(samplesDir, "Plain.java"), []byte("public class Plain {}"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: nil,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			test.setupFiles(t, dir)
+			got, err := extractSnippets(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestExtractSnippets_Error(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		dir     string
+		wantErr error
+	}{
+		{
+			name:    "empty directory parameter returns error",
+			dir:     "",
+			wantErr: errEmptyDir,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := extractSnippets(test.dir)
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("extractSnippets(%q) error = %v, wantErr %v", test.dir, err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestToCamelCase(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "snake case",
+			input: "custom_content",
+			want:  "CustomContent",
+		},
+		{
+			name:  "kebab case",
+			input: "readme-partials",
+			want:  "ReadmePartials",
+		},
+		{
+			name:  "space separated",
+			input: "about us",
+			want:  "AboutUs",
+		},
+		{
+			name:  "already camel",
+			input: "About",
+			want:  "About",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := toCamelCase(test.input)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestParseGroupIDArtifactID(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		input          string
+		wantGroupID    string
+		wantArtifactID string
+	}{
+		{
+			name:           "standard coordinates",
+			input:          "com.google.cloud:google-cloud-storage",
+			wantGroupID:    "com.google.cloud",
+			wantArtifactID: "google-cloud-storage",
+		},
+		{
+			name:           "missing artifact id",
+			input:          "com.google.cloud",
+			wantGroupID:    "com.google.cloud",
+			wantArtifactID: "",
+		},
+		{
+			name:           "empty distribution name",
+			input:          "",
+			wantGroupID:    "",
+			wantArtifactID: "",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gotGroup, gotArtifact := parseGroupIDArtifactID(test.input)
+			if diff := cmp.Diff(test.wantGroupID, gotGroup); diff != "" {
+				t.Errorf("group ID mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(test.wantArtifactID, gotArtifact); diff != "" {
+				t.Errorf("artifact ID mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestParseRepoShortName(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "full repo path",
+			input: "googleapis/google-cloud-java",
+			want:  "google-cloud-java",
+		},
+		{
+			name:  "short repo name only",
+			input: "google-cloud-java",
+			want:  "google-cloud-java",
+		},
+		{
+			name:  "empty repo string",
+			input: "",
+			want:  "",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := parseRepoShortName(test.input)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestLoadReadmePartials(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		setupFiles func(t *testing.T, dir string)
+		want       map[string]interface{}
+	}{
+		{
+			name: "loads yaml partials with camel case conversion",
+			setupFiles: func(t *testing.T, dir string) {
+				path := filepath.Join(dir, ".readme-partials.yaml")
+				content := `about_text: "Custom about"`
+				if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: map[string]interface{}{"AboutText": "Custom about"},
+		},
+		{
+			name: "loads yml fallback partials",
+			setupFiles: func(t *testing.T, dir string) {
+				path := filepath.Join(dir, ".readme-partials.yml")
+				content := `introduction: "Intro text"`
+				if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: map[string]interface{}{"Introduction": "Intro text"},
+		},
+		{
+			name: "missing partials file returns nil",
+			setupFiles: func(t *testing.T, dir string) {
+				// No file written.
+			},
+			want: nil,
+		},
+		{
+			name: "empty partials file returns nil",
+			setupFiles: func(t *testing.T, dir string) {
+				path := filepath.Join(dir, ".readme-partials.yaml")
+				if err := os.WriteFile(path, []byte(""), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: nil,
+		},
+		{
+			name: "partials file with only comments returns nil",
+			setupFiles: func(t *testing.T, dir string) {
+				path := filepath.Join(dir, ".readme-partials.yaml")
+				if err := os.WriteFile(path, []byte("# only comments\n# no keys defined"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: nil,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			test.setupFiles(t, dir)
+			got, err := loadReadmePartials(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestLoadReadmePartials_Error(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		dir        string
+		setupFiles func(t *testing.T, dir string)
+		wantErr    error
+	}{
+		{
+			name:    "empty directory parameter returns error",
+			dir:     "",
+			wantErr: errEmptyDir,
+		},
+		{
+			name: "invalid yaml syntax",
+			setupFiles: func(t *testing.T, dir string) {
+				path := filepath.Join(dir, ".readme-partials.yaml")
+				content := `key: [unclosed list`
+				if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := test.dir
+			if test.setupFiles != nil {
+				dir = t.TempDir()
+				test.setupFiles(t, dir)
+			}
+			_, err := loadReadmePartials(dir)
+			if err == nil {
+				t.Errorf("expected error, got nil")
+			} else if test.wantErr != nil && !errors.Is(err, test.wantErr) {
+				t.Errorf("loadReadmePartials() error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestRenderREADME(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadata := &repoMetadata{
+		NamePretty:       "My API",
+		DistributionName: "com.google.cloud:google-cloud-myapi",
+		Repo:             "googleapis/google-cloud-java",
+		APIShortname:     "myapi",
+		MinJavaVersion:   8,
+	}
+
+	// Test case 1: Without partials
+	if err := renderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", nil); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(tmpDir, "README.md")
+	outputContent, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(outputContent)
+	for _, expectedSubstring := range []string{
+		"# Google My API Client for Java",
+		"<groupId>com.google.cloud</groupId>",
+		"<artifactId>google-cloud-myapi</artifactId>",
+		"<version>1.2.3-LIB</version>",
+	} {
+		if !strings.Contains(content, expectedSubstring) {
+			t.Errorf("generated README missing expected substring %q", expectedSubstring)
+		}
+	}
+
+	// Test case 2: With partials
+	partialsPath := filepath.Join(tmpDir, ".readme-partials.yaml")
+	partialsContent := `about: "This is a great API."`
+	if err := os.WriteFile(partialsPath, []byte(partialsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := renderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", nil); err != nil {
+		t.Fatal(err)
+	}
+	outputContent, err = os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(outputContent), "This is a great API.") {
+		t.Errorf("generated README missing partial content %q", "This is a great API.")
+	}
+
+	// Test case 3: With README.md in keep list
+	keepSet := map[string]bool{"README.md": true}
+	customContent := "Custom README content"
+	if err := os.WriteFile(outputPath, []byte(customContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := renderREADME(tmpDir, metadata, "1.0.0-BOM", "1.2.3-LIB", keepSet); err != nil {
+		t.Fatal(err)
+	}
+	outputContent, err = os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(customContent, string(outputContent)); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestRenderREADME_Error(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		fn      func() error
+		wantErr error
+	}{
+		{
+			name: "empty directory parameter returns error",
+			fn: func() error {
+				return renderREADME("", &repoMetadata{}, "1.0", "1.0", nil)
+			},
+			wantErr: errEmptyDir,
+		},
+		{
+			name: "nil metadata returns error",
+			fn: func() error {
+				return renderREADME("dir", nil, "1.0", "1.0", nil)
+			},
+			wantErr: errNilMetadata,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.fn()
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("renderREADME() error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
+	}
+}

@@ -249,6 +249,37 @@ func extractTitle(filePath string) (string, error) {
 	return title, nil
 }
 
+// toCamelCase converts snake_case, kebab-case, or space-separated strings into CamelCase identifiers.
+func toCamelCase(s string) string {
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == '_' || r == '-' || r == ' '
+	})
+	var sb strings.Builder
+	for _, p := range parts {
+		r, size := utf8.DecodeRuneInString(p)
+		sb.WriteRune(unicode.ToUpper(r))
+		sb.WriteString(p[size:])
+	}
+	return sb.String()
+}
+
+// parseGroupIDArtifactID extracts GroupID and ArtifactID from a Maven distribution name.
+func parseGroupIDArtifactID(distributionName string) (string, string) {
+	groupID, artifactID, _ := strings.Cut(distributionName, ":")
+	return groupID, artifactID
+}
+
+// parseRepoShortName extracts the short repository name from the full repo path.
+func parseRepoShortName(repo string) string {
+	if repo == "" {
+		return ""
+	}
+	if i := strings.LastIndexByte(repo, '/'); i >= 0 {
+		return repo[i+1:]
+	}
+	return repo
+}
+
 // collectSnippetFiles recursively scans dir/samples for Java and XML files containing snippets.
 func collectSnippetFiles(dir string) ([]string, error) {
 	samplesDir := filepath.Join(dir, "samples")
@@ -468,36 +499,4 @@ func loadReadmePartials(dir string) (map[string]interface{}, error) {
 		result[toCamelCase(k)] = v
 	}
 	return result, nil
-}
-
-// toCamelCase converts snake_case, kebab-case, or space-separated strings into CamelCase identifiers.
-func toCamelCase(s string) string {
-	parts := strings.FieldsFunc(s, func(r rune) bool {
-		return r == '_' || r == '-' || r == ' '
-	})
-	var sb strings.Builder
-	for _, p := range parts {
-		// Decode and capitalize the first rune, then append the remaining subslice without copying.
-		r, size := utf8.DecodeRuneInString(p)
-		sb.WriteRune(unicode.ToUpper(r))
-		sb.WriteString(p[size:])
-	}
-	return sb.String()
-}
-
-// parseGroupIDArtifactID extracts GroupID and ArtifactID from a Maven distribution name.
-func parseGroupIDArtifactID(distributionName string) (string, string) {
-	groupID, artifactID, _ := strings.Cut(distributionName, ":")
-	return groupID, artifactID
-}
-
-// parseRepoShortName extracts the short repository name from the full repo path.
-func parseRepoShortName(repo string) string {
-	if repo == "" {
-		return ""
-	}
-	if i := strings.LastIndexByte(repo, '/'); i >= 0 {
-		return repo[i+1:]
-	}
-	return repo
 }

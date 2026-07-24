@@ -143,7 +143,8 @@ func buildGAPICOpts(api *config.API, gemName, googleapisDir string) ([]string, e
 		opts = append(opts, "grpc-service-config="+filepath.Join(googleapisDir, gc))
 	}
 	if trans := transport(sc); trans != "" {
-		opts = append(opts, fmt.Sprintf("transport=%s", trans))
+		transports := strings.ReplaceAll(string(trans), "+", ";")
+		opts = append(opts, "ruby-cloud-generate-transports="+transports)
 	}
 	if sc != nil && sc.HasRESTNumericEnums(config.LanguageRuby) {
 		opts = append(opts, "ruby-cloud-rest-numeric-enums=true")

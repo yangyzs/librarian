@@ -53,7 +53,7 @@ func TestBuildGAPICOpts(t *testing.T) {
 				"ruby-cloud-gem-name=google-cloud-secret_manager-v1",
 				"service-yaml=" + filepath.Join(googleapisDir, "google/cloud/secretmanager/v1/secretmanager_v1.yaml"),
 				"grpc-service-config=" + filepath.Join(googleapisDir, "google/cloud/secretmanager/v1/secretmanager_grpc_service_config.json"),
-				"transport=grpc+rest",
+				"ruby-cloud-generate-transports=grpc;rest",
 				"ruby-cloud-rest-numeric-enums=true",
 			},
 		},
@@ -66,7 +66,7 @@ func TestBuildGAPICOpts(t *testing.T) {
 			want: []string{
 				"ruby-cloud-gem-name=google-cloud-compute-v1",
 				"service-yaml=" + filepath.Join(googleapisDir, "google/cloud/compute/v1/compute_v1.yaml"),
-				"transport=rest",
+				"ruby-cloud-generate-transports=rest",
 				"ruby-cloud-rest-numeric-enums=true",
 			},
 		},

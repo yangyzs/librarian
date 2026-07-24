@@ -62,15 +62,12 @@ type libraryPostProcessParams struct {
 }
 
 func postProcessLibrary(params libraryPostProcessParams) error {
-	if params.library != nil && params.library.Postprocess != nil {
+	if params.library.Postprocess != nil {
 		if err := postprocessing.Apply(params.outDir, params.library.Postprocess); err != nil {
 			return err
 		}
 	}
-	var keepSet map[string]bool
-	if params.library != nil {
-		keepSet = toKeepSet(params.library.Keep)
-	}
+	keepSet := toKeepSet(params.library.Keep)
 	if err := renderREADME(params, keepSet); err != nil {
 		return fmt.Errorf("failed to render README: %w", err)
 	}

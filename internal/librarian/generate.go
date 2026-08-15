@@ -247,10 +247,18 @@ func generateLibraries(ctx context.Context, cfg *config.Config, libraries []*con
 			defer daemon.Stop()
 		}
 		genStart := time.Now()
+		g, gctx := errgroup.WithContext(ctx)
+		g.SetLimit(runtime.NumCPU())
 		for _, library := range libraries {
-			if err := java.Generate(ctx, cfg, library, src); err != nil {
-				return fmt.Errorf("generate library %q (%s): %w", library.Name, cfg.Language, err)
-			}
+			g.Go(func() error {
+				if err := java.Generate(gctx, cfg, library, src); err != nil {
+					return fmt.Errorf("generate library %q (%s): %w", library.Name, cfg.Language, err)
+				}
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return err
 		}
 		durGen := time.Since(genStart)
 		fmt.Printf("[BENCHMARK-CI] Phase 1: Java Code Generation Step Completed: %v\n", durGen)

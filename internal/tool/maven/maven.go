@@ -47,7 +47,11 @@ type pomProject struct {
 
 // Install installs Maven tool dependencies.
 func Install(ctx context.Context, tools []*config.MavenTool, binDir, libDir string) error {
+	hasGAPIC := false
 	for _, mvnTool := range tools {
+		if mvnTool.Name == "protoc-gen-java_gapic" {
+			hasGAPIC = true
+		}
 		var err error
 		if mvnTool.LocalPath != "" {
 			err = installLocalMavenTool(ctx, mvnTool, binDir, libDir)
@@ -56,6 +60,18 @@ func Install(ctx context.Context, tools []*config.MavenTool, binDir, libDir stri
 		}
 		if err != nil {
 			return fmt.Errorf("failed to install maven tool %s: %w", mvnTool.Name, err)
+		}
+	}
+	if hasGAPIC {
+		nailgunTool := &config.MavenTool{
+			Name:       "nailgun-server",
+			GroupID:    "com.martiansoftware",
+			ArtifactID: "nailgun-server",
+			Version:    "1.0.0",
+			Packaging:  "jar",
+		}
+		if err := installExternalMavenTool(ctx, nailgunTool, binDir, libDir); err != nil {
+			// Log warning or ignore failure to ensure safe fallback
 		}
 	}
 	return nil
@@ -201,7 +217,37 @@ func createBinWrapper(wrapperName, destPath, binDir string, isExecutable bool, m
 	case isExecutable:
 		content = fmt.Sprintf("#!/bin/sh\nexec %q \"$@\"\n", destPath)
 	case mainClass != "":
-		content = fmt.Sprintf("#!/bin/sh\nexec java -cp %q %q \"$@\"\n", destPath, mainClass)
+		content = fmt.Sprintf(`#!/bin/sh
+if [ -n "$NAILGUN_PORT" ]; then
+  python3 -c "
+import socket, sys
+port = int(sys.argv[1])
+main_class = sys.argv[2]
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(('127.0.0.1', port))
+s.sendall(b'C' + len(main_class).to_bytes(4, 'big') + main_class.encode())
+data = sys.stdin.buffer.read()
+if data:
+    s.sendall(b'0' + len(data).to_bytes(4, 'big') + data)
+s.sendall(b'S\x00\x00\x00\x00')
+while True:
+    chunk_header = s.recv(5)
+    if not chunk_header or len(chunk_header) < 5:
+        break
+    c_type = chunk_header[0:1]
+    c_len = int.from_bytes(chunk_header[1:5], 'big')
+    payload = b''
+    while len(payload) < c_len:
+        payload += s.recv(c_len - len(payload))
+    if c_type == b'1':
+        sys.stdout.buffer.write(payload)
+    elif c_type == b'X':
+        break
+s.close()
+" "$NAILGUN_PORT" %q && exit 0
+fi
+exec java -cp %q %q "$@"
+`, mainClass, destPath, mainClass)
 	default:
 		content = fmt.Sprintf("#!/bin/sh\nexec java -jar %q \"$@\"\n", destPath)
 	}

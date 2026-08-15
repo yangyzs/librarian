@@ -123,7 +123,8 @@ func TestInstall(t *testing.T) {
 	wantMvn := "mvn dependency:get -Dartifact=com.google.googlejavaformat:google-java-format:1.25.2:jar:all-deps\n" +
 		"mvn dependency:get -Dartifact=io.grpc:protoc-gen-grpc-java:1.81.0:exe:linux-x86_64\n" +
 		"mvn package -B -ntp -T 1.5C -DskipTests -Dcheckstyle.skip -Dclirr.skip -Denforcer.skip -Dfmt.skip " +
-		"-pl sdk-platform-java/gapic-generator-java --also-make"
+		"-pl sdk-platform-java/gapic-generator-java --also-make\n" +
+		"mvn dependency:get -Dartifact=com.martiansoftware:nailgun-server:1.0.0:jar"
 	if diff := cmp.Diff(wantMvn, gotMvn); diff != "" {
 		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
@@ -153,7 +154,37 @@ func TestInstall(t *testing.T) {
 			filename:    "gapic-generator-java-2.28.0-SNAPSHOT.jar",
 			wantContent: "local gapic jar content",
 			wrapperName: "protoc-gen-java_gapic",
-			wantFormat:  "#!/bin/sh\nexec java -cp %q \"com.google.api.generator.Main\" \"$@\"\n",
+			wantFormat: `#!/bin/sh
+if [ -n "$NAILGUN_PORT" ]; then
+  python3 -c "
+import socket, sys
+port = int(sys.argv[1])
+main_class = sys.argv[2]
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(('127.0.0.1', port))
+s.sendall(b'C' + len(main_class).to_bytes(4, 'big') + main_class.encode())
+data = sys.stdin.buffer.read()
+if data:
+    s.sendall(b'0' + len(data).to_bytes(4, 'big') + data)
+s.sendall(b'S\x00\x00\x00\x00')
+while True:
+    chunk_header = s.recv(5)
+    if not chunk_header or len(chunk_header) < 5:
+        break
+    c_type = chunk_header[0:1]
+    c_len = int.from_bytes(chunk_header[1:5], 'big')
+    payload = b''
+    while len(payload) < c_len:
+        payload += s.recv(c_len - len(payload))
+    if c_type == b'1':
+        sys.stdout.buffer.write(payload)
+    elif c_type == b'X':
+        break
+s.close()
+" "$NAILGUN_PORT" "com.google.api.generator.Main" && exit 0
+fi
+exec java -cp %q "com.google.api.generator.Main" "$@"
+`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

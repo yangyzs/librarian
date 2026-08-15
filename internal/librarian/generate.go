@@ -242,6 +242,10 @@ func generateLibraries(ctx context.Context, cfg *config.Config, libraries []*con
 		}
 		return g.Wait()
 	case config.LanguageJava:
+		daemon, err := java.StartDaemonIfConfigured(ctx, cfg)
+		if err == nil && daemon != nil {
+			defer daemon.Stop()
+		}
 		genStart := time.Now()
 		for _, library := range libraries {
 			if err := java.Generate(ctx, cfg, library, src); err != nil {

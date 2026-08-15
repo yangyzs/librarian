@@ -41,7 +41,8 @@ func StartGAPICDaemon(ctx context.Context, toolsEnv map[string]string, gapicJar 
 		"-XX:+UseG1GC",
 		"-cp", classpath,
 		"com.martiansoftware.nailgun.NGServer",
-		fmt.Sprintf("127.0.0.1:%d", port),
+		"127.0.0.1",
+		fmt.Sprintf("%d", port),
 	)
 	cmd.Env = os.Environ()
 	for k, v := range toolsEnv {
@@ -90,11 +91,17 @@ func StartDaemonIfConfigured(ctx context.Context, cfg *config.Config) (*GAPICDae
 	}
 	gapicMatches, _ := filepath.Glob(filepath.Join(libDir, "gapic-generator-java-*.jar"))
 	nailgunMatches, _ := filepath.Glob(filepath.Join(libDir, "nailgun-server-*.jar"))
+	gjfMatches, _ := filepath.Glob(filepath.Join(libDir, "google-java-format-*.jar"))
 	if len(gapicMatches) == 0 || len(nailgunMatches) == 0 {
 		return nil, nil // Safe fallback if jars are not installed
 	}
 
-	daemon, err := StartGAPICDaemon(ctx, env, gapicMatches[0], nailgunMatches[0], 2113)
+	gapicJarPath := gapicMatches[0]
+	if len(gjfMatches) > 0 {
+		gapicJarPath = fmt.Sprintf("%s:%s", gapicJarPath, gjfMatches[0])
+	}
+
+	daemon, err := StartGAPICDaemon(ctx, env, gapicJarPath, nailgunMatches[0], 2113)
 	if err != nil {
 		return nil, err
 	}

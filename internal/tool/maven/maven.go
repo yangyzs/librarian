@@ -212,6 +212,9 @@ func copyArtifactToLib(srcPath, libDir string, makeExecutable bool) (string, err
 // createBinWrapper creates a shell wrapper script in the bin directory that forwards executions to the library file.
 func createBinWrapper(wrapperName, destPath, binDir string, isExecutable bool, mainClass string) error {
 	wrapperPath := filepath.Join(binDir, wrapperName)
+	if mainClass == "" && wrapperName == "google-java-format" {
+		mainClass = "com.google.googlejavaformat.java.Main"
+	}
 	var content string
 	switch {
 	case isExecutable:

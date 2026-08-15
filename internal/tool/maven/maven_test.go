@@ -140,7 +140,37 @@ func TestInstall(t *testing.T) {
 			filename:    "google-java-format-1.25.2-all-deps.jar",
 			wantContent: "gjf jar content",
 			wrapperName: "google-java-format",
-			wantFormat:  "#!/bin/sh\nexec java -jar %q \"$@\"\n",
+			wantFormat: `#!/bin/sh
+if [ -n "$NAILGUN_PORT" ]; then
+  python3 -c "
+import socket, sys
+port = int(sys.argv[1])
+main_class = sys.argv[2]
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(('127.0.0.1', port))
+s.sendall(b'C' + len(main_class).to_bytes(4, 'big') + main_class.encode())
+data = sys.stdin.buffer.read()
+if data:
+    s.sendall(b'0' + len(data).to_bytes(4, 'big') + data)
+s.sendall(b'S\x00\x00\x00\x00')
+while True:
+    chunk_header = s.recv(5)
+    if not chunk_header or len(chunk_header) < 5:
+        break
+    c_type = chunk_header[0:1]
+    c_len = int.from_bytes(chunk_header[1:5], 'big')
+    payload = b''
+    while len(payload) < c_len:
+        payload += s.recv(c_len - len(payload))
+    if c_type == b'1':
+        sys.stdout.buffer.write(payload)
+    elif c_type == b'X':
+        break
+s.close()
+" "$NAILGUN_PORT" "com.google.googlejavaformat.java.Main" && exit 0
+fi
+exec java -cp %q "com.google.googlejavaformat.java.Main" "$@"
+`,
 		},
 		{
 			name:        "protoc-gen-java_grpc",

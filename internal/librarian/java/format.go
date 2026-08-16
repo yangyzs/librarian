@@ -48,7 +48,7 @@ func Format(ctx context.Context, libraries ...*config.Library) error {
 	// Passing 2,000 files per CLI invocation avoids exceeding OS command-line length limits (ARG_MAX)
 	// while preventing JVM heap exhaustion on RAM-constrained CI runners.
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(runtime.NumCPU())
+	g.SetLimit(max(runtime.NumCPU()*2, 4))
 	for i := 0; i < len(allFiles); i += maxFilesPerFormatBatch {
 		end := min(i+maxFilesPerFormatBatch, len(allFiles))
 		chunk := allFiles[i:end]
@@ -71,7 +71,13 @@ func collectJavaFiles(root string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || filepath.Ext(path) != ".java" {
+		if d.IsDir() {
+			if d.Name() == "target" || (strings.HasPrefix(d.Name(), ".") && d.Name() != ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".java" {
 			return nil
 		}
 		// Exclude generated samples and Spanner-specific sample source directory.

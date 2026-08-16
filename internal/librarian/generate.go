@@ -248,7 +248,7 @@ func generateLibraries(ctx context.Context, cfg *config.Config, libraries []*con
 		}
 		genStart := time.Now()
 		g, gctx := errgroup.WithContext(ctx)
-		g.SetLimit(runtime.NumCPU())
+		g.SetLimit(max(runtime.NumCPU()*4, 8))
 		for _, library := range libraries {
 			g.Go(func() error {
 				if err := java.Generate(gctx, cfg, library, src); err != nil {

@@ -223,16 +223,25 @@ func createBinWrapper(wrapperName, destPath, binDir string, isExecutable bool, m
 		content = fmt.Sprintf(`#!/bin/sh
 if [ -n "$NAILGUN_PORT" ]; then
   python3 -c "
-import socket, sys
+import os, socket, sys
 port = int(sys.argv[1])
 main_class = sys.argv[2]
+cli_args = sys.argv[3:]
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect(('127.0.0.1', port))
-s.sendall(b'C' + len(main_class).to_bytes(4, 'big') + main_class.encode())
-data = sys.stdin.buffer.read()
-if data:
-    s.sendall(b'0' + len(data).to_bytes(4, 'big') + data)
+for arg in cli_args:
+    b_arg = arg.encode('utf-8')
+    s.sendall(b'A' + len(b_arg).to_bytes(4, 'big') + b_arg)
+cwd = os.getcwd().encode('utf-8')
+s.sendall(b'W' + len(cwd).to_bytes(4, 'big') + cwd)
+b_class = main_class.encode('utf-8')
+s.sendall(b'C' + len(b_class).to_bytes(4, 'big') + b_class)
+if not sys.stdin.isatty():
+    stdin_data = sys.stdin.buffer.read()
+    if stdin_data:
+        s.sendall(b'0' + len(stdin_data).to_bytes(4, 'big') + stdin_data)
 s.sendall(b'S\x00\x00\x00\x00')
+exit_code = 0
 while True:
     chunk_header = s.recv(5)
     if not chunk_header or len(chunk_header) < 5:
@@ -244,10 +253,17 @@ while True:
         payload += s.recv(c_len - len(payload))
     if c_type == b'1':
         sys.stdout.buffer.write(payload)
+        sys.stdout.buffer.flush()
+    elif c_type == b'2':
+        sys.stderr.buffer.write(payload)
+        sys.stderr.buffer.flush()
     elif c_type == b'X':
+        if len(payload) > 0:
+            exit_code = int(payload.decode('utf-8').strip())
         break
 s.close()
-" "$NAILGUN_PORT" %q && exit 0
+sys.exit(exit_code)
+" "$NAILGUN_PORT" %q "$@" && exit 0
 fi
 exec java --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED --add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED --add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED -cp %q %q "$@"
 `, mainClass, destPath, mainClass)

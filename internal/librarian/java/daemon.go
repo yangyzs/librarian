@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/googleapis/librarian/internal/config"
@@ -33,8 +34,7 @@ type GAPICDaemon struct {
 }
 
 // StartGAPICDaemon starts a background JVM daemon process running com.martiansoftware.nailgun.NGServer.
-func StartGAPICDaemon(ctx context.Context, toolsEnv map[string]string, gapicJar string, nailgunJar string, port int) (*GAPICDaemon, error) {
-	classpath := fmt.Sprintf("%s:%s", nailgunJar, gapicJar)
+func StartGAPICDaemon(ctx context.Context, toolsEnv map[string]string, classpath string, port int) (*GAPICDaemon, error) {
 	cmd := exec.CommandContext(ctx, "java",
 		"-Xms512m",
 		"-Xmx3g",
@@ -96,19 +96,18 @@ func StartDaemonIfConfigured(ctx context.Context, cfg *config.Config) (*GAPICDae
 	if err != nil {
 		return nil, err
 	}
-	gapicMatches, _ := filepath.Glob(filepath.Join(libDir, "gapic-generator-java-*.jar"))
 	nailgunMatches, _ := filepath.Glob(filepath.Join(libDir, "nailgun-server-*.jar"))
-	gjfMatches, _ := filepath.Glob(filepath.Join(libDir, "google-java-format-*.jar"))
-	if len(gapicMatches) == 0 || len(nailgunMatches) == 0 {
-		return nil, nil // Safe fallback if jars are not installed
+	if len(nailgunMatches) == 0 {
+		return nil, nil // Safe fallback if nailgun server jar is not installed
 	}
 
-	gapicJarPath := gapicMatches[0]
-	if len(gjfMatches) > 0 {
-		gapicJarPath = fmt.Sprintf("%s:%s", gapicJarPath, gjfMatches[0])
+	allJars, _ := filepath.Glob(filepath.Join(libDir, "*.jar"))
+	if len(allJars) == 0 {
+		return nil, nil
 	}
+	classpath := strings.Join(allJars, ":")
 
-	daemon, err := StartGAPICDaemon(ctx, env, gapicJarPath, nailgunMatches[0], 2113)
+	daemon, err := StartGAPICDaemon(ctx, env, classpath, 2113)
 	if err != nil {
 		return nil, err
 	}

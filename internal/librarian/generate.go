@@ -248,11 +248,14 @@ func generateLibraries(ctx context.Context, cfg *config.Config, libraries []*con
 		}
 		genStart := time.Now()
 		g, gctx := errgroup.WithContext(ctx)
-		g.SetLimit(max(runtime.NumCPU()*4, 8))
+		g.SetLimit(max(runtime.NumCPU()*2, 4))
 		for _, library := range libraries {
 			g.Go(func() error {
 				if err := java.Generate(gctx, cfg, library, src); err != nil {
 					return fmt.Errorf("generate library %q (%s): %w", library.Name, cfg.Language, err)
+				}
+				if err := java.Format(gctx, library); err != nil {
+					return fmt.Errorf("format library %q (%s): %w", library.Name, cfg.Language, err)
 				}
 				return nil
 			})
@@ -261,14 +264,7 @@ func generateLibraries(ctx context.Context, cfg *config.Config, libraries []*con
 			return err
 		}
 		durGen := time.Since(genStart)
-		fmt.Printf("[BENCHMARK-CI] Phase 1: Java Code Generation Step Completed: %v\n", durGen)
-
-		fmtStart := time.Now()
-		if err := java.Format(ctx, libraries...); err != nil {
-			return fmt.Errorf("format java libraries (%s): %w", cfg.Language, err)
-		}
-		durFmt := time.Since(fmtStart)
-		fmt.Printf("[BENCHMARK-CI] Phase 2: Java Code Formatting Step Completed: %v\n", durFmt)
+		fmt.Printf("[BENCHMARK-CI] Phase 1 & 2: Java Generation and Formatting Completed: %v\n", durGen)
 
 		postStart := time.Now()
 		if err := java.PostGenerate(ctx, ".", cfg); err != nil {

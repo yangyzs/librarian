@@ -99,5 +99,9 @@ func getToolsEnv() (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]string{envPath: binDir}, nil
+	env := map[string]string{envPath: binDir}
+	if port := os.Getenv("NAILGUN_PORT"); port != "" {
+		env["NAILGUN_PORT"] = port
+	}
+	return env, nil
 }

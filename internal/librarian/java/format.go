@@ -66,6 +66,11 @@ func Format(ctx context.Context, libraries ...*config.Library) error {
 }
 
 func collectJavaFiles(root string) ([]string, error) {
+	// Attempt to collect modified/untracked Java files using git status to avoid re-formatting unchanged repository files.
+	if gitFiles, err := collectGitModifiedJavaFiles(root); err == nil && len(gitFiles) > 0 {
+		return gitFiles, nil
+	}
+
 	var files []string
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -92,4 +97,39 @@ func collectJavaFiles(root string) ([]string, error) {
 		return nil
 	})
 	return files, err
+}
+
+func collectGitModifiedJavaFiles(root string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := command.Output(ctx, "git", "-C", root, "status", "--porcelain", "-u")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	lines := strings.Split(out, "\n")
+	for _, line := range lines {
+		if len(line) < 4 {
+			continue
+		}
+		// git status --porcelain output format: XY filename or XY -> filename
+		relPath := strings.TrimSpace(line[3:])
+		if idx := strings.Index(relPath, " -> "); idx != -1 {
+			relPath = relPath[idx+4:]
+		}
+		relPath = strings.Trim(relPath, "\"")
+		if filepath.Ext(relPath) != ".java" {
+			continue
+		}
+		if strings.Contains(relPath, "target/") ||
+			strings.Contains(relPath, filepath.Join("samples", "snippets", "generated")) ||
+			strings.Contains(relPath, filepath.Join("samples", "snippets", "src")) {
+			continue
+		}
+		absPath := filepath.Join(root, relPath)
+		if _, err := os.Stat(absPath); err == nil {
+			files = append(files, absPath)
+		}
+	}
+	return files, nil
 }

@@ -37,7 +37,7 @@ type GAPICDaemon struct {
 func StartGAPICDaemon(ctx context.Context, toolsEnv map[string]string, classpath string, port int) (*GAPICDaemon, error) {
 	cmd := exec.CommandContext(ctx, "java",
 		"-Xms512m",
-		"-Xmx3g",
+		"-Xmx5g",
 		"-XX:+UseG1GC",
 		"--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
 		"--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",

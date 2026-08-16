@@ -100,9 +100,21 @@ func collectJavaFiles(root string) ([]string, error) {
 }
 
 func collectGitModifiedJavaFiles(root string) ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	out, err := command.Output(ctx, "git", "-C", root, "status", "--porcelain", "-u")
+
+	topLevel, err := command.Output(ctx, "git", "-C", root, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, err
+	}
+	topLevel = strings.TrimSpace(topLevel)
+
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		absRoot = root
+	}
+
+	out, err := command.Output(ctx, "git", "-C", topLevel, "status", "--porcelain", "-u")
 	if err != nil {
 		return nil, err
 	}
@@ -126,10 +138,15 @@ func collectGitModifiedJavaFiles(root string) ([]string, error) {
 			strings.Contains(relPath, filepath.Join("samples", "snippets", "src")) {
 			continue
 		}
-		absPath := filepath.Join(root, relPath)
-		if _, err := os.Stat(absPath); err == nil {
-			files = append(files, absPath)
+		absPath := filepath.Join(topLevel, relPath)
+		if strings.HasPrefix(absPath, absRoot) {
+			if _, err := os.Stat(absPath); err == nil {
+				files = append(files, absPath)
+			}
 		}
+	}
+	if len(files) > 0 {
+		fmt.Printf("[BENCHMARK-CI] Formatting %d modified/untracked Java files via git status in %s\n", len(files), root)
 	}
 	return files, nil
 }

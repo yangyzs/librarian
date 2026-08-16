@@ -115,6 +115,9 @@ func Generate(ctx context.Context, cfg *config.Config, library *config.Library, 
 	}); err != nil {
 		return err
 	}
+	if err := Format(ctx, library); err != nil {
+		return fmt.Errorf("failed to format library %q: %w", library.Name, err)
+	}
 	return nil
 }
 

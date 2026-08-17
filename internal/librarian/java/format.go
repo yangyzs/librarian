@@ -44,18 +44,31 @@ func Format(ctx context.Context, libraries ...*config.Library) error {
 	if err != nil {
 		return err
 	}
-	// Batch file paths in chunks of maxFilesPerFormatBatch (1,000 files).
-	// Passing 1,000 files per CLI invocation avoids exceeding OS command-line length limits (ARG_MAX)
-	// while avoiding Nailgun JVM lock contention and heap exhaustion.
+	daemons := GetDaemonPorts()
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(runtime.NumCPU())
+	concurrency := runtime.NumCPU()
+	if len(daemons) > 0 {
+		concurrency = len(daemons)
+	}
+	g.SetLimit(concurrency)
+	batchIdx := 0
 	for i := 0; i < len(allFiles); i += maxFilesPerFormatBatch {
 		end := min(i+maxFilesPerFormatBatch, len(allFiles))
 		chunk := allFiles[i:end]
+		idx := batchIdx
+		batchIdx++
 		g.Go(func() error {
 			batchStart := time.Now()
+			workerEnv := make(map[string]string)
+			for k, v := range env {
+				workerEnv[k] = v
+			}
+			if len(daemons) > 0 {
+				port := daemons[idx%len(daemons)]
+				workerEnv["NAILGUN_PORT"] = fmt.Sprintf("%d", port)
+			}
 			args := append([]string{"--replace"}, chunk...)
-			if err := command.RunWithEnv(gctx, env, "google-java-format", args...); err != nil {
+			if err := command.RunWithEnv(gctx, workerEnv, "google-java-format", args...); err != nil {
 				return fmt.Errorf("failed to format batch [%d:%d]: %w", i, end, err)
 			}
 			fmt.Printf("[BENCHMARK-CI] Format Batch %d files: %v\n", len(chunk), time.Since(batchStart))

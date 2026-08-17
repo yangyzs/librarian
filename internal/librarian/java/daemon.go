@@ -21,23 +21,48 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/googleapis/librarian/internal/config"
 )
 
-// GAPICDaemon manages a long-running background JVM process using Nailgun for GAPIC code generation.
+var (
+	activeDaemonPorts []int
+	activeDaemonMu    sync.RWMutex
+)
+
+// GetDaemonPorts returns the slice of active Nailgun daemon ports.
+func GetDaemonPorts() []int {
+	activeDaemonMu.RLock()
+	defer activeDaemonMu.RUnlock()
+	if len(activeDaemonPorts) > 0 {
+		ports := make([]int, len(activeDaemonPorts))
+		copy(ports, activeDaemonPorts)
+		return ports
+	}
+	if portStr := os.Getenv("NAILGUN_PORT"); portStr != "" {
+		var p int
+		if _, err := fmt.Sscanf(portStr, "%d", &p); err == nil && p > 0 {
+			return []int{p}
+		}
+	}
+	return nil
+}
+
+// GAPICDaemon manages long-running background JVM daemon processes using Nailgun.
 type GAPICDaemon struct {
-	cmd  *exec.Cmd
+	cmds []*exec.Cmd
 	Port int
 }
 
 // StartGAPICDaemon starts a background JVM daemon process running com.martiansoftware.nailgun.NGServer.
 func StartGAPICDaemon(ctx context.Context, toolsEnv map[string]string, classpath string, port int) (*GAPICDaemon, error) {
 	cmd := exec.CommandContext(ctx, "java",
-		"-Xms512m",
-		"-Xmx3584m",
+		"-Xms384m",
+		"-Xmx1792m",
 		"-XX:+UseG1GC",
 		"--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
 		"--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",
@@ -65,7 +90,7 @@ func StartGAPICDaemon(ctx context.Context, toolsEnv map[string]string, classpath
 		conn, err := net.DialTimeout("tcp", address, 100*time.Millisecond)
 		if err == nil {
 			conn.Close()
-			return &GAPICDaemon{cmd: cmd, Port: port}, nil
+			return &GAPICDaemon{cmds: []*exec.Cmd{cmd}, Port: port}, nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -74,16 +99,23 @@ func StartGAPICDaemon(ctx context.Context, toolsEnv map[string]string, classpath
 	return nil, fmt.Errorf("nailgun daemon failed to respond on port %d within 5 seconds", port)
 }
 
-// Stop terminates the background JVM daemon process.
+// Stop terminates the background JVM daemon processes.
 func (d *GAPICDaemon) Stop() error {
 	os.Unsetenv("NAILGUN_PORT")
-	if d != nil && d.cmd != nil && d.cmd.Process != nil {
-		return d.cmd.Process.Kill()
+	activeDaemonMu.Lock()
+	activeDaemonPorts = nil
+	activeDaemonMu.Unlock()
+	if d != nil {
+		for _, cmd := range d.cmds {
+			if cmd != nil && cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+		}
 	}
 	return nil
 }
 
-// StartDaemonIfConfigured attempts to start a GAPIC JVM daemon if configured tools are present.
+// StartDaemonIfConfigured attempts to start GAPIC JVM daemons if configured tools are present.
 func StartDaemonIfConfigured(ctx context.Context, cfg *config.Config) (*GAPICDaemon, error) {
 	if cfg == nil || cfg.Tools == nil {
 		return nil, nil
@@ -107,10 +139,30 @@ func StartDaemonIfConfigured(ctx context.Context, cfg *config.Config) (*GAPICDae
 	}
 	classpath := strings.Join(allJars, ":")
 
-	daemon, err := StartGAPICDaemon(ctx, env, classpath, 2113)
-	if err != nil {
-		return nil, err
+	numDaemons := min(runtime.NumCPU(), 2)
+	basePort := 2113
+	var cmds []*exec.Cmd
+	var ports []int
+
+	for i := 0; i < numDaemons; i++ {
+		port := basePort + i
+		daemon, err := StartGAPICDaemon(ctx, env, classpath, port)
+		if err != nil {
+			for _, c := range cmds {
+				if c != nil && c.Process != nil {
+					_ = c.Process.Kill()
+				}
+			}
+			return nil, fmt.Errorf("failed to start daemon on port %d: %w", port, err)
+		}
+		cmds = append(cmds, daemon.cmds...)
+		ports = append(ports, port)
 	}
-	os.Setenv("NAILGUN_PORT", "2113")
-	return daemon, nil
+
+	activeDaemonMu.Lock()
+	activeDaemonPorts = ports
+	activeDaemonMu.Unlock()
+
+	os.Setenv("NAILGUN_PORT", fmt.Sprintf("%d", ports[0]))
+	return &GAPICDaemon{cmds: cmds, Port: ports[0]}, nil
 }

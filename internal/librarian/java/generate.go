@@ -163,43 +163,54 @@ func generateAPI(ctx context.Context, params generateAPIParams) error {
 	if params.cfg.Tools != nil && params.cfg.Tools.Protoc != nil {
 		pc = params.cfg.Tools.Protoc
 	}
-	// 1. Generate standard Protocol Buffer Java classes.
-	if shouldGenerateProto(javaAPI) {
-		protoStart := time.Now()
-		protoProtos := filterProtos(apiProtos, javaAPI.SkipProtoClassGeneration, primaryDir)
-		protoProtos = append(protoProtos, additionalProtosToGenerateAbs...)
-		args := protoProtocArgs(protoProtos, params.srcCfg, protoDir)
-		if err := runProtoc(ctx, pc, args); err != nil {
-			return fmt.Errorf("failed to generate proto: %w", err)
-		}
-		durProto := time.Since(protoStart)
-		fmt.Printf("[BENCHMARK-CI] API %s Protoc Proto: %v\n", params.api.Path, durProto)
-	}
-	// 2. Generate gRPC service stubs (skipped if transport is rest).
-	transport := params.apiCfg.Transport(config.LanguageJava)
-	if shouldGenerateGRPC(javaAPI) && transport != "rest" {
-		grpcStart := time.Now()
-		if err := runProtoc(ctx, pc, gRPCProtocArgs(apiProtos, params.srcCfg, gRPCDir)); err != nil {
-			return fmt.Errorf("failed to generate gRPC module: %w", err)
-		}
-		durGrpc := time.Since(grpcStart)
-		fmt.Printf("[BENCHMARK-CI] API %s Protoc gRPC: %v\n", params.api.Path, durGrpc)
-	}
-	// 3. Generate GAPIC library.
-	if shouldGenerateGAPIC(javaAPI) || shouldGenerateResourceNames(javaAPI) {
-		optsStart := time.Now()
+	genProto := shouldGenerateProto(javaAPI)
+	genGRPC := shouldGenerateGRPC(javaAPI) && params.apiCfg.Transport(config.LanguageJava) != "rest"
+	genGAPIC := shouldGenerateGAPIC(javaAPI) || shouldGenerateResourceNames(javaAPI)
+
+	protoProtos := filterProtos(apiProtos, javaAPI.SkipProtoClassGeneration, primaryDir)
+	protoProtos = append(protoProtos, additionalProtosToGenerateAbs...)
+	sameProtos := len(protoProtos) == len(apiProtos)
+
+	if genProto && genGRPC && genGAPIC && sameProtos {
 		gapicOpts, err := resolveGAPICOptions(params.cfg, params.library, params.api, primaryDir, params.apiCfg)
 		if err != nil {
 			return fmt.Errorf("failed to resolve gapic options: %w", err)
 		}
-		fmt.Printf("[BENCHMARK-CI] API %s GAPIC resolveGAPICOptions: %v\n", params.api.Path, time.Since(optsStart))
-
-		args := gapicProtocArgs(apiProtos, allAdditionalProtosAbs, params.srcCfg, gapicDir, gapicOpts)
-		gapicExecStart := time.Now()
+		args := baseProtocArgs(params.srcCfg)
+		args = append(args, fmt.Sprintf("--java_out=%s", protoDir))
+		args = append(args, fmt.Sprintf("--java_grpc_out=%s", gRPCDir))
+		args = append(args, fmt.Sprintf("--java_gapic_out=metadata:%s", gapicDir))
+		args = append(args, "--java_gapic_opt="+strings.Join(gapicOpts, ","))
+		args = append(args, apiProtos...)
+		args = append(args, allAdditionalProtosAbs...)
 		if err := runProtoc(ctx, pc, args); err != nil {
-			return fmt.Errorf("failed to generate gapic: %w", err)
+			return fmt.Errorf("failed to generate combined proto/grpc/gapic: %w", err)
 		}
-		fmt.Printf("[BENCHMARK-CI] API %s GAPIC protoc-gen-java_gapic JVM Run: %v\n", params.api.Path, time.Since(gapicExecStart))
+	} else {
+		// 1. Generate standard Protocol Buffer Java classes.
+		if genProto {
+			args := protoProtocArgs(protoProtos, params.srcCfg, protoDir)
+			if err := runProtoc(ctx, pc, args); err != nil {
+				return fmt.Errorf("failed to generate proto: %w", err)
+			}
+		}
+		// 2. Generate gRPC service stubs.
+		if genGRPC {
+			if err := runProtoc(ctx, pc, gRPCProtocArgs(apiProtos, params.srcCfg, gRPCDir)); err != nil {
+				return fmt.Errorf("failed to generate gRPC module: %w", err)
+			}
+		}
+		// 3. Generate GAPIC library.
+		if genGAPIC {
+			gapicOpts, err := resolveGAPICOptions(params.cfg, params.library, params.api, primaryDir, params.apiCfg)
+			if err != nil {
+				return fmt.Errorf("failed to resolve gapic options: %w", err)
+			}
+			args := gapicProtocArgs(apiProtos, allAdditionalProtosAbs, params.srcCfg, gapicDir, gapicOpts)
+			if err := runProtoc(ctx, pc, args); err != nil {
+				return fmt.Errorf("failed to generate gapic: %w", err)
+			}
+		}
 	}
 
 	postStart := time.Now()

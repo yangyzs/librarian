@@ -67,7 +67,7 @@ func Format(ctx context.Context, libraries ...*config.Library) error {
 				port := daemons[idx%len(daemons)]
 				workerEnv["NAILGUN_PORT"] = fmt.Sprintf("%d", port)
 			}
-			args := append([]string{"--replace"}, chunk...)
+			args := append([]string{"--replace", "--skip-javadoc-formatting"}, chunk...)
 			if err := command.RunWithEnv(gctx, workerEnv, "google-java-format", args...); err != nil {
 				return fmt.Errorf("failed to format batch [%d:%d]: %w", i, end, err)
 			}
@@ -90,7 +90,8 @@ func collectJavaFiles(root string) ([]string, error) {
 			return err
 		}
 		if d.IsDir() {
-			if d.Name() == "target" || (strings.HasPrefix(d.Name(), ".") && d.Name() != ".") {
+			name := d.Name()
+			if name == "target" || (strings.HasPrefix(name, ".") && name != ".") || strings.HasPrefix(name, "proto-") || strings.HasPrefix(name, "grpc-") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -147,6 +148,10 @@ func collectGitModifiedJavaFiles(root string) ([]string, error) {
 			continue
 		}
 		if strings.Contains(relPath, "target/") ||
+			strings.Contains(relPath, "/proto-") ||
+			strings.Contains(relPath, "/grpc-") ||
+			strings.HasPrefix(relPath, "proto-") ||
+			strings.HasPrefix(relPath, "grpc-") ||
 			strings.Contains(relPath, filepath.Join("samples", "snippets", "generated")) ||
 			strings.Contains(relPath, filepath.Join("samples", "snippets", "src")) {
 			continue

@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -28,7 +27,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const maxFilesPerFormatBatch = 1000
+const maxFilesPerFormatBatch = 150
 
 // Format formats Java client libraries using google-java-format in batches.
 func Format(ctx context.Context, libraries ...*config.Library) error {
@@ -44,11 +43,11 @@ func Format(ctx context.Context, libraries ...*config.Library) error {
 	if err != nil {
 		return err
 	}
-	// Batch file paths in chunks of maxFilesPerFormatBatch (1,000 files).
-	// Passing 1,000 files per CLI invocation avoids exceeding OS command-line length limits (ARG_MAX)
-	// while preventing JVM heap exhaustion on RAM-constrained CI runners.
+	// Batch file paths in chunks of maxFilesPerFormatBatch (150 files).
+	// Passing 150 files per CLI invocation avoids exceeding OS command-line length limits (ARG_MAX)
+	// while keeping JVM heap utilization low (~500MB) for concurrent Nailgun workers.
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(runtime.NumCPU())
+	g.SetLimit(3)
 	for i := 0; i < len(allFiles); i += maxFilesPerFormatBatch {
 		end := min(i+maxFilesPerFormatBatch, len(allFiles))
 		chunk := allFiles[i:end]

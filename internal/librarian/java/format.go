@@ -28,7 +28,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const maxFilesPerFormatBatch = 1000
+const maxFilesPerFormatBatch = 300
 
 // Format formats Java client libraries using google-java-format in batches.
 func Format(ctx context.Context, libraries ...*config.Library) error {
@@ -44,11 +44,11 @@ func Format(ctx context.Context, libraries ...*config.Library) error {
 	if err != nil {
 		return err
 	}
-	// Batch file paths in chunks of maxFilesPerFormatBatch (1,000 files).
-	// Passing 1,000 files per CLI invocation avoids exceeding OS command-line length limits (ARG_MAX)
+	// Batch file paths in chunks of maxFilesPerFormatBatch (300 files).
+	// Passing 300 files per CLI invocation avoids exceeding OS command-line length limits (ARG_MAX)
 	// while preventing JVM heap exhaustion on RAM-constrained CI runners.
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(min(runtime.NumCPU(), 2))
+	g.SetLimit(max(runtime.NumCPU()*2, 4))
 	for i := 0; i < len(allFiles); i += maxFilesPerFormatBatch {
 		end := min(i+maxFilesPerFormatBatch, len(allFiles))
 		chunk := allFiles[i:end]

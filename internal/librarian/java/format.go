@@ -61,7 +61,14 @@ func collectJavaFiles(root string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || filepath.Ext(path) != ".java" {
+		if d.IsDir() {
+			name := d.Name()
+			if name == "target" || (strings.HasPrefix(name, ".") && name != ".") || strings.HasPrefix(name, "proto-") || strings.HasPrefix(name, "grpc-") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".java" {
 			return nil
 		}
 		// Exclude generated samples and Spanner-specific sample source directory.

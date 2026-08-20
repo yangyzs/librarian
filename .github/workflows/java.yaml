@@ -85,7 +85,7 @@ jobs:
         with:
           path: |
             ~/.cache/librarian
-          key: librarian-java-tools-v2-${{ runner.os }}-${{ hashFiles('internal/config/**/*.go') }}-${{ hashFiles('google-cloud-java/librarian.yaml', 'google-cloud-java/sdk-platform-java/gapic-generator-java/**') }}
+          key: librarian-java-tools-v3-${{ runner.os }}-${{ hashFiles('internal/config/**/*.go', 'internal/tool/maven/**/*.go', 'internal/librarian/java/**/*.go') }}-${{ hashFiles('google-cloud-java/librarian.yaml', 'google-cloud-java/sdk-platform-java/gapic-generator-java/**') }}
       - name: Verify Java and Maven installation
         if: steps.cache-tools.outputs.cache-hit != 'true'
         run: |
@@ -116,7 +116,7 @@ jobs:
         working-directory: google-cloud-java
         run: librarian generate secretmanager
       - name: Run librarian generate all (integration test)
-        if: matrix.task == 'integration' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: matrix.task == 'integration'
         working-directory: google-cloud-java
         run: librarian generate --all
   create-issue-on-failure:

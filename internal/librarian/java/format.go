@@ -41,6 +41,7 @@ func Format(ctx context.Context, libraries ...*config.Library) error {
 	if err != nil {
 		return err
 	}
+	env["JAVA_TOOL_OPTIONS"] = "-XX:+UseParallelGC -XX:TieredStopAtLevel=1 -Xmx2g"
 	// Batch file paths in chunks of maxFilesPerFormatBatch (2,000 files).
 	// Passing 2,000 files per CLI invocation avoids exceeding OS command-line length limits (ARG_MAX)
 	// while preventing JVM heap exhaustion on RAM-constrained CI runners.
